@@ -113,12 +113,12 @@ def train_one_epoch(
             scales = compute_multi_scale_scales(args.resolution, args.expanded_scales, args.patch_size, args.num_windows)
             random.seed(it)
             scale = random.choice(scales)
-            # Use no_grad for interpolation to avoid tracking gradients for the resize operation,
-            # but the resulting tensors can still participate in gradient computation.
-            # Unlike inference_mode(), no_grad() allows tensors to be used in autograd later.
-            with torch.no_grad():
-                samples.tensors = F.interpolate(samples.tensors, size=scale, mode='bilinear', align_corners=False)
-                samples.mask = F.interpolate(samples.mask.unsqueeze(1).float(), size=scale, mode='nearest').squeeze(1).bool()
+            # Interpolate input tensors - clone first to ensure we're working with regular tensors
+            # (not inference tensors), then interpolate. This ensures the result can be used in autograd.
+            input_tensors = samples.tensors.clone()
+            input_mask = samples.mask.clone()
+            samples.tensors = F.interpolate(input_tensors, size=scale, mode='bilinear', align_corners=False)
+            samples.mask = F.interpolate(input_mask.unsqueeze(1).float(), size=scale, mode='nearest').squeeze(1).bool()
 
         for i in range(args.grad_accum_steps):
             start_idx = i * sub_batch_size
