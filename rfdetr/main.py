@@ -919,6 +919,10 @@ def populate_args(
     decoder_norm='LN',
     bbox_reparam=False,
     freeze_batch_norm=False,
+    # NEW: Encoder parameters for improved architecture
+    num_encoder_layers=0,
+    enc_n_points=4,
+    use_cross_scale_fusion=False,
     
     # Matcher parameters
     set_cost_class=2,
@@ -1034,6 +1038,9 @@ def populate_args(
         decoder_norm=decoder_norm,
         bbox_reparam=bbox_reparam,
         freeze_batch_norm=freeze_batch_norm,
+        num_encoder_layers=num_encoder_layers,
+        enc_n_points=enc_n_points,
+        use_cross_scale_fusion=use_cross_scale_fusion,
         set_cost_class=set_cost_class,
         set_cost_bbox=set_cost_bbox,
         set_cost_giou=set_cost_giou,
@@ -1081,6 +1088,9 @@ def populate_args(
         early_stopping_min_delta=early_stopping_min_delta,
         early_stopping_use_ema=early_stopping_use_ema,
         gradient_checkpointing=gradient_checkpointing,
+        num_encoder_layers=num_encoder_layers,
+        enc_n_points=enc_n_points,
+        use_cross_scale_fusion=use_cross_scale_fusion,
         **extra_kwargs
     )
     return args

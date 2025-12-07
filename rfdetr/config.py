@@ -100,11 +100,12 @@ class RFDETRBaseConfig(ModelConfig):
                 data.setdefault('num_encoder_layers', 2)
                 data.setdefault('use_cross_scale_fusion', True)
             else:
-                # Ensure original dimensions are used (override any improved values)
-                data['hidden_dim'] = data.get('hidden_dim', 256)
-                data['sa_nheads'] = data.get('sa_nheads', 8)
-                data['ca_nheads'] = data.get('ca_nheads', 16)
-                data['dec_n_points'] = data.get('dec_n_points', 2)
+                # Ensure original dimensions are used (explicitly set to prevent any improved values)
+                # Always use original dimensions when use_improvements=False, regardless of what's in data
+                data['hidden_dim'] = 256
+                data['sa_nheads'] = 8
+                data['ca_nheads'] = 16
+                data['dec_n_points'] = 2
                 data['num_encoder_layers'] = 0
                 data['use_cross_scale_fusion'] = False
                 # Remove improved values if present
@@ -160,10 +161,11 @@ class RFDETRLargeConfig(RFDETRBaseConfig):
                 data.setdefault('num_encoder_layers', 3)
                 data.setdefault('use_cross_scale_fusion', True)
             else:
-                data['hidden_dim'] = data.get('hidden_dim', 384)
-                data['sa_nheads'] = data.get('sa_nheads', 12)
-                data['ca_nheads'] = data.get('ca_nheads', 24)
-                data['dec_n_points'] = data.get('dec_n_points', 4)
+                # Ensure original dimensions are used (explicitly set to prevent any improved values)
+                data['hidden_dim'] = 384
+                data['sa_nheads'] = 12
+                data['ca_nheads'] = 24
+                data['dec_n_points'] = 4
                 data['num_encoder_layers'] = 0
                 data['use_cross_scale_fusion'] = False
         
@@ -237,10 +239,11 @@ class RFDETRMediumConfig(RFDETRBaseConfig):
                 data.setdefault('num_encoder_layers', 2)
                 data.setdefault('use_cross_scale_fusion', True)
             else:
-                data['hidden_dim'] = data.get('hidden_dim', 256)
-                data['sa_nheads'] = data.get('sa_nheads', 8)
-                data['ca_nheads'] = data.get('ca_nheads', 16)
-                data['dec_n_points'] = data.get('dec_n_points', 2)
+                # Ensure original dimensions are used (explicitly set to prevent any improved values)
+                data['hidden_dim'] = 256
+                data['sa_nheads'] = 8
+                data['ca_nheads'] = 16
+                data['dec_n_points'] = 2
                 data['num_encoder_layers'] = 0
                 data['use_cross_scale_fusion'] = False
         
