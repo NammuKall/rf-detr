@@ -1,0 +1,40 @@
+# Cursor Rules
+
+## File Creation Guidelines
+- **DO NOT** create new files or markdown (.md) files without explicit permission from the user
+- Always ask for confirmation before creating any new files
+
+## Code Change Guidelines
+- If a solution isn't immediately clear or there are multiple possible approaches:
+  1. Create a plan of action with a few options
+  2. Present the options to the user
+  3. Wait for confirmation before making any code changes
+- Only proceed with code changes after receiving explicit approval
+
+## Code Quality Standards
+- Maintain consistency with existing codebase patterns and style
+- Use type hints for function parameters and return types when adding new code
+- Include docstrings for new functions and classes (follow existing docstring style)
+- Preserve existing copyright headers and attribution when modifying files
+- When modifying code, maintain backward compatibility unless explicitly requested otherwise
+
+## Error Handling
+- Add appropriate error handling for new code, especially for user-facing functions
+- Use informative error messages that help users understand what went wrong
+- Consider edge cases and invalid inputs when implementing new features
+
+## Performance Considerations
+- Be mindful of performance implications, especially for model inference and training code
+- When optimizing, consider the trade-offs between accuracy, speed, and memory usage
+- If making performance-critical changes, consider benchmarking or discussing trade-offs
+
+## Dependency Management
+- Check existing dependencies in `pyproject.toml` before suggesting new packages
+- Prefer using existing dependencies when possible
+- If a new dependency is needed, mention it in the plan before adding it
+
+## Communication Guidelines
+- When uncertain about requirements, ask clarifying questions rather than making assumptions
+- Explain the reasoning behind significant code changes or architectural decisions
+- If encountering deprecated patterns or potential improvements, mention them but don't change without approval
+

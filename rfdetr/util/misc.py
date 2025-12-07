@@ -309,17 +309,14 @@ class NestedTensor(object):
 
     def to(self, device):
         # type: (Device) -> NestedTensor # noqa
-        # Use numpy conversion to guarantee completely fresh regular tensors when moving to device.
-        # This is the most reliable way to break inference tensor properties completely.
-        # Converting to numpy and back creates brand new tensors that can participate in autograd.
-        tensors_np = self.tensors.detach().cpu().numpy()
-        cast_tensor = torch.tensor(tensors_np, device=device, dtype=self.tensors.dtype, requires_grad=False)
+        # Use ensure_regular_tensor to guarantee completely fresh regular tensors when moving to device.
+        # This ensures tensors can participate in autograd and breaks inference tensor properties.
+        cast_tensor = ensure_regular_tensor(self.tensors).to(device)
         mask = self.mask
         if mask is not None:
             assert mask is not None
-            # Use numpy conversion for mask as well to ensure fresh regular tensor
-            mask_np = mask.detach().cpu().numpy()
-            cast_mask = torch.tensor(mask_np, device=device, dtype=mask.dtype, requires_grad=False)
+            # Ensure mask is also a regular tensor
+            cast_mask = ensure_regular_tensor(mask).to(device)
         else:
             cast_mask = None
         return NestedTensor(cast_tensor, cast_mask)
@@ -331,6 +328,26 @@ class NestedTensor(object):
         return str(self.tensors)
 
 
+def ensure_regular_tensor(tensor: Tensor) -> Tensor:
+    """
+    Ensure a tensor is a regular tensor (not an inference tensor) that can participate in autograd.
+    This function creates a fresh tensor that is guaranteed to be a regular tensor.
+    
+    Args:
+        tensor: Input tensor that might be an inference tensor
+        
+    Returns:
+        A fresh regular tensor with the same data, dtype, and device
+    """
+    # Convert to numpy and back to create a completely fresh tensor
+    # This is the most reliable way to break inference tensor properties
+    if tensor.numel() == 0:
+        # Handle empty tensors
+        return tensor.clone()
+    np_data = tensor.detach().cpu().numpy()
+    return torch.tensor(np_data, device=tensor.device, dtype=tensor.dtype, requires_grad=False)
+
+
 def nested_tensor_from_tensor_list(tensor_list: List[Tensor]):
     # TODO make this more general
     if tensor_list[0].ndim == 3:
@@ -339,16 +356,24 @@ def nested_tensor_from_tensor_list(tensor_list: List[Tensor]):
             # call _onnx_nested_tensor_from_tensor_list() instead
             return _onnx_nested_tensor_from_tensor_list(tensor_list)
 
+        # Ensure all input tensors are regular tensors (not inference tensors)
+        # This prevents inference tensor properties from propagating
+        regular_tensor_list = [ensure_regular_tensor(img) for img in tensor_list]
+        
         # TODO make it support different-sized images
-        max_size = _max_by_axis([list(img.shape) for img in tensor_list])
+        max_size = _max_by_axis([list(img.shape) for img in regular_tensor_list])
         # min_size = tuple(min(s) for s in zip(*[img.shape for img in tensor_list]))
-        batch_shape = [len(tensor_list)] + max_size
+        batch_shape = [len(regular_tensor_list)] + max_size
         b, c, h, w = batch_shape
-        dtype = tensor_list[0].dtype
-        device = tensor_list[0].device
-        tensor = torch.zeros(batch_shape, dtype=dtype, device=device)
-        mask = torch.ones((b, h, w), dtype=torch.bool, device=device)
-        for img, pad_img, m in zip(tensor_list, tensor, mask):
+        dtype = regular_tensor_list[0].dtype
+        device = regular_tensor_list[0].device
+        
+        # Create fresh tensors (not inference tensors)
+        with torch.enable_grad():
+            tensor = torch.zeros(batch_shape, dtype=dtype, device=device)
+            mask = torch.ones((b, h, w), dtype=torch.bool, device=device)
+        
+        for img, pad_img, m in zip(regular_tensor_list, tensor, mask):
             pad_img[: img.shape[0], : img.shape[1], : img.shape[2]].copy_(img)
             m[: img.shape[1], :img.shape[2]] = False
     else:
