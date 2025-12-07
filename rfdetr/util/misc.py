@@ -24,6 +24,7 @@ import time
 from collections import defaultdict, deque
 from typing import Optional, List
 
+import numpy as np
 import torch
 import torch.distributed as dist
 # needed due to empty tensor bug in pytorch and torchvision 0.5
@@ -308,14 +309,17 @@ class NestedTensor(object):
 
     def to(self, device):
         # type: (Device) -> NestedTensor # noqa
-        # Clone tensors before moving to device to ensure they're fresh regular tensors
-        # This prevents inference tensor properties from being preserved
-        cast_tensor = self.tensors.clone().to(device)
+        # Use numpy conversion to guarantee completely fresh regular tensors when moving to device.
+        # This is the most reliable way to break inference tensor properties completely.
+        # Converting to numpy and back creates brand new tensors that can participate in autograd.
+        tensors_np = self.tensors.detach().cpu().numpy()
+        cast_tensor = torch.tensor(tensors_np, device=device, dtype=self.tensors.dtype, requires_grad=False)
         mask = self.mask
         if mask is not None:
             assert mask is not None
-            # Clone mask before moving to device to ensure it's a fresh regular tensor
-            cast_mask = mask.clone().to(device)
+            # Use numpy conversion for mask as well to ensure fresh regular tensor
+            mask_np = mask.detach().cpu().numpy()
+            cast_mask = torch.tensor(mask_np, device=device, dtype=mask.dtype, requires_grad=False)
         else:
             cast_mask = None
         return NestedTensor(cast_tensor, cast_mask)

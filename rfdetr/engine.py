@@ -113,28 +113,34 @@ def train_one_epoch(
             scales = compute_multi_scale_scales(args.resolution, args.expanded_scales, args.patch_size, args.num_windows)
             random.seed(it)
             scale = random.choice(scales)
-            # Interpolate input tensors - ensure we create completely fresh tensors that can participate in autograd.
-            # Use detach() + clone() to break any inference tensor properties and create fresh regular tensors.
-            # This is necessary because tensors created in inference_mode() cannot be used in backward pass.
-            input_tensors = samples.tensors.detach().clone().contiguous()
-            input_mask = samples.mask.detach().clone().contiguous()
+            # Interpolate input tensors - use numpy conversion to guarantee completely fresh regular tensors.
+            # This is the most reliable way to break inference tensor properties completely.
+            # Converting to numpy and back creates brand new tensors that can participate in autograd.
+            input_tensors_np = samples.tensors.detach().cpu().numpy()
+            input_mask_np = samples.mask.detach().cpu().numpy()
+            input_tensors = torch.tensor(input_tensors_np, device=samples.tensors.device, dtype=samples.tensors.dtype, requires_grad=False)
+            input_mask = torch.tensor(input_mask_np, device=samples.mask.device, dtype=samples.mask.dtype, requires_grad=False)
             # Interpolate - ensure we're not in any inference context
             with torch.enable_grad():
                 interpolated_tensors = F.interpolate(input_tensors, size=scale, mode='bilinear', align_corners=False)
                 interpolated_mask = F.interpolate(input_mask.unsqueeze(1).float(), size=scale, mode='nearest').squeeze(1).bool()
-            # Detach and clone to ensure fresh regular tensors (not inference tensors)
-            samples.tensors = interpolated_tensors.detach().clone().contiguous()
-            samples.mask = interpolated_mask.detach().clone().contiguous()
+            # Convert back to numpy and create fresh tensors to guarantee no inference properties
+            interpolated_tensors_np = interpolated_tensors.detach().cpu().numpy()
+            interpolated_mask_np = interpolated_mask.detach().cpu().numpy()
+            samples.tensors = torch.tensor(interpolated_tensors_np, device=interpolated_tensors.device, dtype=interpolated_tensors.dtype, requires_grad=False)
+            samples.mask = torch.tensor(interpolated_mask_np, device=interpolated_mask.device, dtype=interpolated_mask.dtype, requires_grad=False)
 
         for i in range(args.grad_accum_steps):
             start_idx = i * sub_batch_size
             final_idx = start_idx + sub_batch_size
-            # Detach and clone sliced tensors to ensure fresh regular tensors (not inference tensors)
-            # This prevents any inference tensor properties from being inherited through slicing
+            # Use numpy conversion for sliced tensors to guarantee completely fresh regular tensors.
+            # This is the most reliable way to break inference tensor properties.
             sliced_tensors = samples.tensors[start_idx:final_idx]
             sliced_mask = samples.mask[start_idx:final_idx]
-            new_samples_tensors = sliced_tensors.detach().clone().contiguous()
-            new_samples_mask = sliced_mask.detach().clone().contiguous()
+            sliced_tensors_np = sliced_tensors.detach().cpu().numpy()
+            sliced_mask_np = sliced_mask.detach().cpu().numpy()
+            new_samples_tensors = torch.tensor(sliced_tensors_np, device=sliced_tensors.device, dtype=sliced_tensors.dtype, requires_grad=False)
+            new_samples_mask = torch.tensor(sliced_mask_np, device=sliced_mask.device, dtype=sliced_mask.dtype, requires_grad=False)
             new_samples = NestedTensor(new_samples_tensors, new_samples_mask)
             new_samples = new_samples.to(device)
             new_targets = [{k: v.to(device) for k, v in t.items()} for t in targets[start_idx:final_idx]]
