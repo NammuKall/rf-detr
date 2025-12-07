@@ -113,18 +113,25 @@ def train_one_epoch(
             scales = compute_multi_scale_scales(args.resolution, args.expanded_scales, args.patch_size, args.num_windows)
             random.seed(it)
             scale = random.choice(scales)
-            # Interpolate input tensors - clone first to ensure we're working with regular tensors
-            # (not inference tensors), then interpolate. This ensures the result can be used in autograd.
-            input_tensors = samples.tensors.clone()
-            input_mask = samples.mask.clone()
-            samples.tensors = F.interpolate(input_tensors, size=scale, mode='bilinear', align_corners=False)
-            samples.mask = F.interpolate(input_mask.unsqueeze(1).float(), size=scale, mode='nearest').squeeze(1).bool()
+            # Interpolate input tensors - ensure we create completely fresh tensors that can participate in autograd.
+            # Clone inputs first, then clone outputs to ensure no inference tensor properties are retained.
+            # This is necessary because tensors created in inference_mode() cannot be used in backward pass.
+            input_tensors = samples.tensors.clone().contiguous()
+            input_mask = samples.mask.clone().contiguous()
+            # Interpolate and immediately clone the result to ensure fresh tensors
+            interpolated_tensors = F.interpolate(input_tensors, size=scale, mode='bilinear', align_corners=False)
+            interpolated_mask = F.interpolate(input_mask.unsqueeze(1).float(), size=scale, mode='nearest').squeeze(1).bool()
+            # Clone the interpolated results to ensure they're fresh regular tensors (not inference tensors)
+            samples.tensors = interpolated_tensors.clone().contiguous()
+            samples.mask = interpolated_mask.clone().contiguous()
 
         for i in range(args.grad_accum_steps):
             start_idx = i * sub_batch_size
             final_idx = start_idx + sub_batch_size
-            new_samples_tensors = samples.tensors[start_idx:final_idx]
-            new_samples = NestedTensor(new_samples_tensors, samples.mask[start_idx:final_idx])
+            # Clone sliced tensors to ensure they're fresh regular tensors (not inference tensors)
+            new_samples_tensors = samples.tensors[start_idx:final_idx].clone().contiguous()
+            new_samples_mask = samples.mask[start_idx:final_idx].clone().contiguous()
+            new_samples = NestedTensor(new_samples_tensors, new_samples_mask)
             new_samples = new_samples.to(device)
             new_targets = [{k: v.to(device) for k, v in t.items()} for t in targets[start_idx:final_idx]]
 
