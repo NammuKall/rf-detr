@@ -780,6 +780,12 @@ def build_model(args):
     device = torch.device(args.device)
 
 
+    # Get cross-scale fusion setting
+    try:
+        use_cross_scale_fusion = args.use_cross_scale_fusion
+    except:
+        use_cross_scale_fusion = False
+    
     backbone = build_backbone(
         encoder=args.encoder,
         vit_encoder_num_layers=args.vit_encoder_num_layers,
@@ -803,6 +809,7 @@ def build_model(args):
         patch_size=args.patch_size,
         num_windows=args.num_windows,
         positional_encoding_size=args.positional_encoding_size,
+        use_cross_scale_fusion=use_cross_scale_fusion,  # NEW: Pass cross-scale fusion
     )
     if args.encoder_only:
         return backbone[0].encoder, None, None

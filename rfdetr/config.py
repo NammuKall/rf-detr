@@ -37,20 +37,31 @@ class ModelConfig(BaseModel):
     cls_loss_coef: float = 1.0
     segmentation_head: bool = False
     mask_downsample_ratio: int = 4
+    # NEW: Encoder layers to refine backbone features
+    num_encoder_layers: int = 2
+    enc_n_points: int = 4
+    # NEW: Cross-scale fusion
+    use_cross_scale_fusion: bool = True
 
 
 class RFDETRBaseConfig(ModelConfig):
     """
     The configuration for an RF-DETR Base model.
+    IMPROVED: Increased model width and added encoder layers for better accuracy.
     """
     encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"] = "dinov2_windowed_small"
-    hidden_dim: int = 256
+    # IMPROVED: Increased hidden_dim from 256 to 320 for better capacity
+    hidden_dim: int = 320
     patch_size: int = 14
     num_windows: int = 4
     dec_layers: int = 3
-    sa_nheads: int = 8
-    ca_nheads: int = 16
-    dec_n_points: int = 2
+    # IMPROVED: Increased attention heads for better representation
+    sa_nheads: int = 10  # Increased from 8
+    ca_nheads: int = 20  # Increased from 16 (maintains 2:1 ratio)
+    # IMPROVED: Increased sampling points for better attention
+    dec_n_points: int = 4  # Increased from 2
+    enc_n_points: int = 4  # NEW: Encoder sampling points
+    num_encoder_layers: int = 2  # NEW: Add 2 encoder layers
     num_queries: int = 300
     num_select: int = 300
     projector_scale: List[Literal["P3", "P4", "P5"]] = ["P4"]
@@ -58,18 +69,25 @@ class RFDETRBaseConfig(ModelConfig):
     pretrain_weights: Optional[str] = "rf-detr-base.pth"
     resolution: int = 560
     positional_encoding_size: int = 37
+    use_cross_scale_fusion: bool = True  # NEW: Enable cross-scale fusion
 
 class RFDETRLargeConfig(RFDETRBaseConfig):
     """
     The configuration for an RF-DETR Large model.
+    IMPROVED: Increased model width and added more encoder layers for maximum accuracy.
     """
     encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"] = "dinov2_windowed_base"
-    hidden_dim: int = 384
-    sa_nheads: int = 12
-    ca_nheads: int = 24
-    dec_n_points: int = 4
+    # IMPROVED: Increased hidden_dim from 384 to 512 for better capacity
+    hidden_dim: int = 512
+    sa_nheads: int = 16  # Increased from 12
+    ca_nheads: int = 32  # Increased from 24 (maintains 2:1 ratio)
+    # IMPROVED: Increased sampling points for better attention
+    dec_n_points: int = 6  # Increased from 4
+    enc_n_points: int = 6  # NEW: More encoder sampling points
+    num_encoder_layers: int = 3  # NEW: Add 3 encoder layers for large model
     projector_scale: List[Literal["P3", "P4", "P5"]] = ["P3", "P5"]
     pretrain_weights: Optional[str] = "rf-detr-large.pth"
+    use_cross_scale_fusion: bool = True  # NEW: Enable cross-scale fusion
 
 class RFDETRNanoConfig(RFDETRBaseConfig):
     """
@@ -98,6 +116,7 @@ class RFDETRSmallConfig(RFDETRBaseConfig):
 class RFDETRMediumConfig(RFDETRBaseConfig):
     """
     The configuration for an RF-DETR Medium model.
+    IMPROVED: Increased model width and added encoder layers for better accuracy.
     """
     out_feature_indexes: List[int] = [3, 6, 9, 12]
     num_windows: int = 2
@@ -106,6 +125,14 @@ class RFDETRMediumConfig(RFDETRBaseConfig):
     resolution: int = 576
     positional_encoding_size: int = 36
     pretrain_weights: Optional[str] = "rf-detr-medium.pth"
+    # IMPROVED: Medium model improvements
+    hidden_dim: int = 384  # Increased from base 320
+    sa_nheads: int = 12  # Increased
+    ca_nheads: int = 24  # Increased (maintains 2:1 ratio)
+    dec_n_points: int = 4  # Increased
+    enc_n_points: int = 4  # NEW
+    num_encoder_layers: int = 2  # NEW: Add 2 encoder layers
+    use_cross_scale_fusion: bool = True  # NEW
 
 class RFDETRSegPreviewConfig(RFDETRBaseConfig):
     segmentation_head: bool = True

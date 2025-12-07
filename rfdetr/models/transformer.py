@@ -126,6 +126,88 @@ def gen_encoder_output_proposals(memory, memory_padding_mask, spatial_shapes, un
     return output_memory.to(memory.dtype), output_proposals.to(memory.dtype)
 
 
+class TransformerEncoderLayer(nn.Module):
+    """
+    Encoder layer that refines multi-scale features from the backbone.
+    Uses multi-scale deformable attention to process features at different scales.
+    """
+    def __init__(self, d_model=256, nhead=8, dim_feedforward=2048, dropout=0.1,
+                 activation="relu", num_feature_levels=4, enc_n_points=4):
+        super().__init__()
+        # Self-attention using multi-scale deformable attention
+        self.self_attn = MSDeformAttn(
+            d_model, n_levels=num_feature_levels, n_heads=nhead, n_points=enc_n_points)
+        
+        # Feed-forward network
+        self.linear1 = nn.Linear(d_model, dim_feedforward)
+        self.dropout = nn.Dropout(dropout)
+        self.linear2 = nn.Linear(dim_feedforward, d_model)
+        
+        # Normalization layers
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        
+        # Dropout layers
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
+        
+        self.activation = _get_activation_fn(activation)
+        self.d_model = d_model
+        self.nhead = nhead
+        
+    def forward(self, src, pos, reference_points, spatial_shapes, level_start_index, 
+                src_key_padding_mask=None):
+        """
+        Args:
+            src: (N, \sum{HW}, C) - flattened multi-scale features
+            pos: (N, \sum{HW}, C) - positional embeddings
+            reference_points: (N, \sum{HW}, num_levels, 2) - reference points for each feature
+            spatial_shapes: (num_levels, 2) - spatial shapes of each level
+            level_start_index: (num_levels,) - start indices for each level
+            src_key_padding_mask: (N, \sum{HW}) - padding mask
+        """
+        # Self-attention with residual connection
+        src2 = self.self_attn(
+            src + pos,  # Add positional embedding
+            reference_points,
+            src,
+            spatial_shapes,
+            level_start_index,
+            src_key_padding_mask
+        )
+        src = src + self.dropout1(src2)
+        src = self.norm1(src)
+        
+        # Feed-forward with residual connection
+        src2 = self.linear2(self.dropout(self.activation(self.linear1(src))))
+        src = src + self.dropout2(src2)
+        src = self.norm2(src)
+        
+        return src
+
+
+class TransformerEncoder(nn.Module):
+    """Encoder that refines backbone features for detection task."""
+    def __init__(self, encoder_layer, num_layers, norm=None):
+        super().__init__()
+        self.layers = _get_clones(encoder_layer, num_layers)
+        self.num_layers = num_layers
+        self.norm = norm
+        
+    def forward(self, src, pos, reference_points, spatial_shapes, level_start_index,
+                mask=None):
+        output = src
+        
+        for layer in self.layers:
+            output = layer(output, pos, reference_points, spatial_shapes, 
+                         level_start_index, mask)
+        
+        if self.norm is not None:
+            output = self.norm(output)
+            
+        return output
+
+
 class Transformer(nn.Module):
 
     def __init__(self, d_model=512, sa_nhead=8, ca_nhead=8, num_queries=300,
@@ -136,9 +218,27 @@ class Transformer(nn.Module):
                  num_feature_levels=4, dec_n_points=4,
                  lite_refpoint_refine=False,
                  decoder_norm_type='LN',
-                 bbox_reparam=False):
+                 bbox_reparam=False,
+                 num_encoder_layers=0,  # NEW: Number of encoder layers
+                 enc_n_points=4):  # NEW: Sampling points for encoder
         super().__init__()
-        self.encoder = None
+        
+        # NEW: Add encoder layers to refine backbone features
+        self.num_encoder_layers = num_encoder_layers
+        if num_encoder_layers > 0:
+            encoder_layer = TransformerEncoderLayer(
+                d_model=d_model,
+                nhead=ca_nhead,  # Use cross-attention heads for encoder
+                dim_feedforward=dim_feedforward,
+                dropout=dropout,
+                activation=activation,
+                num_feature_levels=num_feature_levels,
+                enc_n_points=enc_n_points
+            )
+            encoder_norm = nn.LayerNorm(d_model) if normalize_before else None
+            self.encoder = TransformerEncoder(encoder_layer, num_encoder_layers, encoder_norm)
+        else:
+            self.encoder = None
 
         decoder_layer = TransformerDecoderLayer(d_model, sa_nhead, ca_nhead, dim_feedforward,
                                                 dropout, activation, normalize_before, 
@@ -221,6 +321,35 @@ class Transformer(nn.Module):
         lvl_pos_embed_flatten = torch.cat(lvl_pos_embed_flatten, 1) # bs, \sum{hxw}, c 
         spatial_shapes = torch.as_tensor(spatial_shapes, dtype=torch.long, device=memory.device)
         level_start_index = torch.cat((spatial_shapes.new_zeros((1, )), spatial_shapes.prod(1).cumsum(0)[:-1]))
+        
+        # NEW: Generate reference points for encoder (center of each feature location)
+        if self.encoder is not None:
+            # Create reference points for encoder: center of each spatial location
+            reference_points_enc = []
+            for lvl, (h, w) in enumerate(spatial_shapes):
+                # Create grid of reference points in [0, 1] range
+                y = torch.arange(h, dtype=torch.float32, device=memory.device)
+                x = torch.arange(w, dtype=torch.float32, device=memory.device)
+                y = (y + 0.5) / h  # Normalize to [0, 1]
+                x = (x + 0.5) / w
+                y, x = torch.meshgrid(y, x, indexing='ij')
+                ref_points = torch.stack([x.flatten(), y.flatten()], dim=-1)  # (H*W, 2)
+                # Expand to (bs, H*W, num_levels, 2)
+                ref_points = ref_points.unsqueeze(0).repeat(memory.shape[0], 1, 1, 1)
+                # Repeat for all levels (encoder attends to all levels)
+                ref_points = ref_points.unsqueeze(2).repeat(1, 1, len(spatial_shapes), 1)
+                reference_points_enc.append(ref_points)
+            reference_points_enc = torch.cat(reference_points_enc, dim=1)  # (bs, \sum{HW}, num_levels, 2)
+            
+            # Apply encoder layers to refine features
+            memory = self.encoder(
+                memory,
+                lvl_pos_embed_flatten,
+                reference_points_enc,
+                spatial_shapes,
+                level_start_index,
+                mask_flatten
+            )
         
         if self.two_stage:
             output_memory, output_proposals = gen_encoder_output_proposals(
@@ -560,6 +689,17 @@ def build_transformer(args):
         two_stage = args.two_stage
     except:
         two_stage = False
+    
+    # NEW: Get encoder parameters (default to 0 if not specified)
+    try:
+        num_encoder_layers = args.num_encoder_layers
+    except:
+        num_encoder_layers = 0
+    
+    try:
+        enc_n_points = args.enc_n_points
+    except:
+        enc_n_points = 4  # Default to 4 points like decoder
 
     return Transformer(
         d_model=args.hidden_dim,
@@ -577,6 +717,8 @@ def build_transformer(args):
         lite_refpoint_refine=args.lite_refpoint_refine,
         decoder_norm_type=args.decoder_norm,
         bbox_reparam=args.bbox_reparam,
+        num_encoder_layers=num_encoder_layers,  # NEW
+        enc_n_points=enc_n_points,  # NEW
     )
 
 

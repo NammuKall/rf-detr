@@ -138,10 +138,71 @@ class C2f(nn.Module):
         return self.cv2(torch.cat(y, 1))
 
 
+class CrossScaleFusion(nn.Module):
+    """
+    Cross-scale feature fusion module.
+    Allows features at different scales to interact and share information.
+    This improves detection of objects at multiple scales.
+    """
+    def __init__(self, channels, num_scales, layer_norm=False):
+        super().__init__()
+        self.num_scales = num_scales
+        # Cross-scale attention weights (learnable)
+        self.fusion_weights = nn.Parameter(torch.ones(num_scales) / num_scales)
+        # Feature fusion convolution
+        self.fusion_conv = ConvX(channels * num_scales, channels, kernel=1, 
+                                 layer_norm=layer_norm, act='silu')
+        self.norm = get_norm('LN', channels) if layer_norm else nn.Identity()
+        
+    def forward(self, features):
+        """
+        Args:
+            features: List of feature maps at different scales [(B, C, H_i, W_i), ...]
+        Returns:
+            List of fused feature maps with same shapes as input
+        """
+        if len(features) <= 1:
+            return features
+        
+        # Store original sizes
+        original_sizes = [feat.shape[-2:] for feat in features]
+        
+        # Resize all features to the same size (use the largest scale as reference)
+        target_size = features[0].shape[-2:]  # Use first (usually largest) as target
+        resized_features = []
+        for feat in features:
+            if feat.shape[-2:] != target_size:
+                feat_resized = F.interpolate(feat, size=target_size, mode='bilinear', align_corners=False)
+            else:
+                feat_resized = feat
+            resized_features.append(feat_resized)
+        
+        # Weighted fusion (simple weighted sum)
+        weights_normalized = F.softmax(self.fusion_weights, dim=0)
+        fused = sum(w * feat for w, feat in zip(weights_normalized, resized_features))
+        
+        # Cross-scale interaction: concatenate all scales and fuse
+        concat_feat = torch.cat(resized_features, dim=1)  # (B, C*num_scales, H, W)
+        fused = self.fusion_conv(concat_feat) + fused  # Residual connection
+        
+        # Resize back to original sizes and add residual
+        output_features = []
+        for i, (feat, orig_size) in enumerate(zip(features, original_sizes)):
+            if orig_size != target_size:
+                output = F.interpolate(fused, size=orig_size, mode='bilinear', align_corners=False)
+            else:
+                output = fused
+            # Add residual connection to original feature
+            output_features.append(self.norm(output + feat))
+        
+        return output_features
+
+
 class MultiScaleProjector(nn.Module):
     """
     This module implements MultiScaleProjector in :paper:`lwdetr`.
     It creates pyramid features built on top of the input feature map.
+    IMPROVED: Added cross-scale fusion for better multi-scale object detection.
     """
 
     def __init__(
@@ -154,6 +215,7 @@ class MultiScaleProjector(nn.Module):
         rms_norm=False,
         survival_prob=1.0,
         force_drop_last_n_features=0,
+        use_cross_scale_fusion=False,  # NEW: Enable cross-scale fusion
     ):
         """
         Args:
@@ -168,6 +230,15 @@ class MultiScaleProjector(nn.Module):
         self.scale_factors = scale_factors
         self.survival_prob = survival_prob
         self.force_drop_last_n_features = force_drop_last_n_features
+        self.use_cross_scale_fusion = use_cross_scale_fusion
+        
+        # NEW: Add cross-scale fusion module
+        if use_cross_scale_fusion:
+            self.cross_scale_fusion = CrossScaleFusion(
+                out_channels, len(scale_factors), layer_norm=layer_norm
+            )
+        else:
+            self.cross_scale_fusion = None
 
         stages_sampling = []
         stages = []
@@ -270,6 +341,11 @@ class MultiScaleProjector(nn.Module):
             results.append(
                 F.max_pool2d(results[-1], kernel_size=1, stride=2, padding=0)
             )
+        
+        # NEW: Apply cross-scale fusion if enabled
+        if self.cross_scale_fusion is not None:
+            results = self.cross_scale_fusion(results)
+        
         return results
 
 

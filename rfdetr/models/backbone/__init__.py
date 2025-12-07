@@ -74,6 +74,7 @@ def build_backbone(
     patch_size,
     num_windows,
     positional_encoding_size,
+    use_cross_scale_fusion=False,  # NEW: Cross-scale fusion parameter
 ):
     """
     Useful args:
@@ -104,6 +105,7 @@ def build_backbone(
         patch_size=patch_size,
         num_windows=num_windows,
         positional_encoding_size=positional_encoding_size,
+        use_cross_scale_fusion=use_cross_scale_fusion,  # NEW: Pass cross-scale fusion
     )
 
     model = Joiner(backbone, position_embedding)
