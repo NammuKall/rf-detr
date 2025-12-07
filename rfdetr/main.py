@@ -1088,9 +1088,6 @@ def populate_args(
         early_stopping_min_delta=early_stopping_min_delta,
         early_stopping_use_ema=early_stopping_use_ema,
         gradient_checkpointing=gradient_checkpointing,
-        num_encoder_layers=num_encoder_layers,
-        enc_n_points=enc_n_points,
-        use_cross_scale_fusion=use_cross_scale_fusion,
         **extra_kwargs
     )
     return args
