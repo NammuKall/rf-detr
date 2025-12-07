@@ -308,11 +308,14 @@ class NestedTensor(object):
 
     def to(self, device):
         # type: (Device) -> NestedTensor # noqa
-        cast_tensor = self.tensors.to(device)
+        # Clone tensors before moving to device to ensure they're fresh regular tensors
+        # This prevents inference tensor properties from being preserved
+        cast_tensor = self.tensors.clone().to(device)
         mask = self.mask
         if mask is not None:
             assert mask is not None
-            cast_mask = mask.to(device)
+            # Clone mask before moving to device to ensure it's a fresh regular tensor
+            cast_mask = mask.clone().to(device)
         else:
             cast_mask = None
         return NestedTensor(cast_tensor, cast_mask)

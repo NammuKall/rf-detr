@@ -114,23 +114,27 @@ def train_one_epoch(
             random.seed(it)
             scale = random.choice(scales)
             # Interpolate input tensors - ensure we create completely fresh tensors that can participate in autograd.
-            # Clone inputs first, then clone outputs to ensure no inference tensor properties are retained.
+            # Use detach() + clone() to break any inference tensor properties and create fresh regular tensors.
             # This is necessary because tensors created in inference_mode() cannot be used in backward pass.
-            input_tensors = samples.tensors.clone().contiguous()
-            input_mask = samples.mask.clone().contiguous()
-            # Interpolate and immediately clone the result to ensure fresh tensors
-            interpolated_tensors = F.interpolate(input_tensors, size=scale, mode='bilinear', align_corners=False)
-            interpolated_mask = F.interpolate(input_mask.unsqueeze(1).float(), size=scale, mode='nearest').squeeze(1).bool()
-            # Clone the interpolated results to ensure they're fresh regular tensors (not inference tensors)
-            samples.tensors = interpolated_tensors.clone().contiguous()
-            samples.mask = interpolated_mask.clone().contiguous()
+            input_tensors = samples.tensors.detach().clone().contiguous()
+            input_mask = samples.mask.detach().clone().contiguous()
+            # Interpolate - ensure we're not in any inference context
+            with torch.enable_grad():
+                interpolated_tensors = F.interpolate(input_tensors, size=scale, mode='bilinear', align_corners=False)
+                interpolated_mask = F.interpolate(input_mask.unsqueeze(1).float(), size=scale, mode='nearest').squeeze(1).bool()
+            # Detach and clone to ensure fresh regular tensors (not inference tensors)
+            samples.tensors = interpolated_tensors.detach().clone().contiguous()
+            samples.mask = interpolated_mask.detach().clone().contiguous()
 
         for i in range(args.grad_accum_steps):
             start_idx = i * sub_batch_size
             final_idx = start_idx + sub_batch_size
-            # Clone sliced tensors to ensure they're fresh regular tensors (not inference tensors)
-            new_samples_tensors = samples.tensors[start_idx:final_idx].clone().contiguous()
-            new_samples_mask = samples.mask[start_idx:final_idx].clone().contiguous()
+            # Detach and clone sliced tensors to ensure fresh regular tensors (not inference tensors)
+            # This prevents any inference tensor properties from being inherited through slicing
+            sliced_tensors = samples.tensors[start_idx:final_idx]
+            sliced_mask = samples.mask[start_idx:final_idx]
+            new_samples_tensors = sliced_tensors.detach().clone().contiguous()
+            new_samples_mask = sliced_mask.detach().clone().contiguous()
             new_samples = NestedTensor(new_samples_tensors, new_samples_mask)
             new_samples = new_samples.to(device)
             new_targets = [{k: v.to(device) for k, v in t.items()} for t in targets[start_idx:final_idx]]
