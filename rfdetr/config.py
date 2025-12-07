@@ -5,7 +5,7 @@
 # ------------------------------------------------------------------------
 
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from typing import List, Optional, Literal, Type
 import torch
 DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
@@ -47,21 +47,35 @@ class ModelConfig(BaseModel):
 class RFDETRBaseConfig(ModelConfig):
     """
     The configuration for an RF-DETR Base model.
-    IMPROVED: Increased model width and added encoder layers for better accuracy.
+    
+    NOTE: The improved architecture (use_improvements=True) requires retrained weights.
+    Set use_improvements=False to use pretrained weights with original architecture.
     """
     encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"] = "dinov2_windowed_small"
-    # IMPROVED: Increased hidden_dim from 256 to 320 for better capacity
-    hidden_dim: int = 320
+    # NEW: Flag to enable/disable improvements (for compatibility with pretrained weights)
+    use_improvements: bool = False  # Set to True after retraining with improvements
+    
+    # Original dimensions (compatible with pretrained weights)
+    hidden_dim: int = 256
     patch_size: int = 14
     num_windows: int = 4
     dec_layers: int = 3
-    # IMPROVED: Increased attention heads for better representation
-    sa_nheads: int = 10  # Increased from 8
-    ca_nheads: int = 20  # Increased from 16 (maintains 2:1 ratio)
-    # IMPROVED: Increased sampling points for better attention
-    dec_n_points: int = 4  # Increased from 2
-    enc_n_points: int = 4  # NEW: Encoder sampling points
-    num_encoder_layers: int = 2  # NEW: Add 2 encoder layers
+    sa_nheads: int = 8
+    ca_nheads: int = 16
+    dec_n_points: int = 2
+    
+    # Improved dimensions (used when use_improvements=True)
+    # These will override the above when improvements are enabled
+    improved_hidden_dim: int = 320
+    improved_sa_nheads: int = 10
+    improved_ca_nheads: int = 20
+    improved_dec_n_points: int = 4
+    
+    # Encoder and cross-scale fusion (only used when use_improvements=True)
+    enc_n_points: int = 4
+    num_encoder_layers: int = 2
+    use_cross_scale_fusion: bool = True
+    
     num_queries: int = 300
     num_select: int = 300
     projector_scale: List[Literal["P3", "P4", "P5"]] = ["P4"]
@@ -69,25 +83,64 @@ class RFDETRBaseConfig(ModelConfig):
     pretrain_weights: Optional[str] = "rf-detr-base.pth"
     resolution: int = 560
     positional_encoding_size: int = 37
-    use_cross_scale_fusion: bool = True  # NEW: Enable cross-scale fusion
+    
+    @model_validator(mode='after')
+    def apply_improvements(self):
+        """Apply improvements if enabled"""
+        if self.use_improvements:
+            self.hidden_dim = self.improved_hidden_dim
+            self.sa_nheads = self.improved_sa_nheads
+            self.ca_nheads = self.improved_ca_nheads
+            self.dec_n_points = self.improved_dec_n_points
+        else:
+            # Disable encoder layers and cross-scale fusion when using original architecture
+            self.num_encoder_layers = 0
+            self.use_cross_scale_fusion = False
+        return self
 
 class RFDETRLargeConfig(RFDETRBaseConfig):
     """
     The configuration for an RF-DETR Large model.
-    IMPROVED: Increased model width and added more encoder layers for maximum accuracy.
+    
+    NOTE: The improved architecture (use_improvements=True) requires retrained weights.
+    Set use_improvements=False to use pretrained weights with original architecture.
     """
     encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"] = "dinov2_windowed_base"
-    # IMPROVED: Increased hidden_dim from 384 to 512 for better capacity
-    hidden_dim: int = 512
-    sa_nheads: int = 16  # Increased from 12
-    ca_nheads: int = 32  # Increased from 24 (maintains 2:1 ratio)
-    # IMPROVED: Increased sampling points for better attention
-    dec_n_points: int = 6  # Increased from 4
-    enc_n_points: int = 6  # NEW: More encoder sampling points
-    num_encoder_layers: int = 3  # NEW: Add 3 encoder layers for large model
+    use_improvements: bool = False
+    
+    # Original dimensions (compatible with pretrained weights)
+    hidden_dim: int = 384
+    sa_nheads: int = 12
+    ca_nheads: int = 24
+    dec_n_points: int = 4
+    
+    # Improved dimensions (used when use_improvements=True)
+    improved_hidden_dim: int = 512
+    improved_sa_nheads: int = 16
+    improved_ca_nheads: int = 32
+    improved_dec_n_points: int = 6
+    
+    # Encoder and cross-scale fusion (only used when use_improvements=True)
+    enc_n_points: int = 6
+    num_encoder_layers: int = 3
+    use_cross_scale_fusion: bool = True
+    
     projector_scale: List[Literal["P3", "P4", "P5"]] = ["P3", "P5"]
     pretrain_weights: Optional[str] = "rf-detr-large.pth"
-    use_cross_scale_fusion: bool = True  # NEW: Enable cross-scale fusion
+    
+    @model_validator(mode='after')
+    def apply_improvements(self):
+        """Apply improvements if enabled"""
+        if self.use_improvements:
+            self.hidden_dim = self.improved_hidden_dim
+            self.sa_nheads = self.improved_sa_nheads
+            self.ca_nheads = self.improved_ca_nheads
+            self.dec_n_points = self.improved_dec_n_points
+        else:
+            # Disable encoder layers and cross-scale fusion when using original architecture
+            self.num_encoder_layers = 0
+            self.use_cross_scale_fusion = False
+        return self
 
 class RFDETRNanoConfig(RFDETRBaseConfig):
     """
@@ -116,8 +169,12 @@ class RFDETRSmallConfig(RFDETRBaseConfig):
 class RFDETRMediumConfig(RFDETRBaseConfig):
     """
     The configuration for an RF-DETR Medium model.
-    IMPROVED: Increased model width and added encoder layers for better accuracy.
+    
+    NOTE: The improved architecture (use_improvements=True) requires retrained weights.
+    Set use_improvements=False to use pretrained weights with original architecture.
     """
+    use_improvements: bool = False
+    
     out_feature_indexes: List[int] = [3, 6, 9, 12]
     num_windows: int = 2
     dec_layers: int = 4
@@ -125,14 +182,32 @@ class RFDETRMediumConfig(RFDETRBaseConfig):
     resolution: int = 576
     positional_encoding_size: int = 36
     pretrain_weights: Optional[str] = "rf-detr-medium.pth"
-    # IMPROVED: Medium model improvements
-    hidden_dim: int = 384  # Increased from base 320
-    sa_nheads: int = 12  # Increased
-    ca_nheads: int = 24  # Increased (maintains 2:1 ratio)
-    dec_n_points: int = 4  # Increased
-    enc_n_points: int = 4  # NEW
-    num_encoder_layers: int = 2  # NEW: Add 2 encoder layers
-    use_cross_scale_fusion: bool = True  # NEW
+    
+    # Original dimensions (inherited from base, but Medium uses base dimensions)
+    # Improved dimensions (used when use_improvements=True)
+    improved_hidden_dim: int = 384
+    improved_sa_nheads: int = 12
+    improved_ca_nheads: int = 24
+    improved_dec_n_points: int = 4
+    
+    # Encoder and cross-scale fusion (only used when use_improvements=True)
+    enc_n_points: int = 4
+    num_encoder_layers: int = 2
+    use_cross_scale_fusion: bool = True
+    
+    @model_validator(mode='after')
+    def apply_improvements(self):
+        """Apply improvements if enabled"""
+        if self.use_improvements:
+            self.hidden_dim = self.improved_hidden_dim
+            self.sa_nheads = self.improved_sa_nheads
+            self.ca_nheads = self.improved_ca_nheads
+            self.dec_n_points = self.improved_dec_n_points
+        else:
+            # Disable encoder layers and cross-scale fusion when using original architecture
+            self.num_encoder_layers = 0
+            self.use_cross_scale_fusion = False
+        return self
 
 class RFDETRSegPreviewConfig(RFDETRBaseConfig):
     segmentation_head: bool = True
