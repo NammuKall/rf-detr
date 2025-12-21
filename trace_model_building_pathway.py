@@ -118,6 +118,7 @@ def trace_model_building_pathway(model_class_name: str = "RFDETRBase") -> Dict[s
         'config_values': {},
         'args_values': {},
         'default_overrides': {},
+        'config_args_comparison': {},
         'transformations': [],
         'issues': []
     }
@@ -263,7 +264,8 @@ def trace_model_building_pathway(model_class_name: str = "RFDETRBase") -> Dict[s
                     'message': f"Parameter {param} in config but not in args"
                 })
         
-        trace['transformations'] = comparison
+        # Store comparison separately from transformations
+        trace['config_args_comparison'] = comparison
         
     except Exception as e:
         trace['steps'].append({
@@ -288,11 +290,13 @@ def trace_model_building_pathway(model_class_name: str = "RFDETRBase") -> Dict[s
         if 'num_classes + 1' in build_model_source or 'num_classes = args.num_classes + 1' in build_model_source:
             transformations_found.append({
                 'type': 'num_classes_increment',
-                'description': 'num_classes is incremented by 1 in build_model',
+                'description': 'num_classes is incremented by 1 in build_model (DETR convention: includes background class)',
                 'config_value': args.num_classes,
-                'transformed_value': args.num_classes + 1
+                'transformed_value': args.num_classes + 1,
+                'is_expected': True,
+                'note': 'This is expected behavior. When comparing configs, account for this transformation.'
             })
-            print(f"  ⚠️  Transformation: num_classes {args.num_classes} → {args.num_classes + 1}")
+            print(f"  ℹ️  Expected Transformation: num_classes {args.num_classes} → {args.num_classes + 1} (DETR convention: includes background class)")
         
         # Check for use_cross_scale_fusion fallback
         if 'use_cross_scale_fusion' in build_model_source:
@@ -301,9 +305,11 @@ def trace_model_building_pathway(model_class_name: str = "RFDETRBase") -> Dict[s
                     'type': 'cross_scale_fusion_fallback',
                     'description': 'use_cross_scale_fusion has try/except fallback to False',
                     'config_value': getattr(args, 'use_cross_scale_fusion', None),
-                    'fallback_value': False
+                    'fallback_value': False,
+                    'is_expected': True,
+                    'note': 'This is expected graceful handling for missing parameters.'
                 })
-                print(f"  ⚠️  Fallback: use_cross_scale_fusion has try/except fallback to False")
+                print(f"  ℹ️  Expected Fallback: use_cross_scale_fusion has try/except fallback to False (graceful handling)")
         
         # Check for target_shape fallback
         if 'target_shape' in build_model_source:
@@ -312,9 +318,11 @@ def trace_model_building_pathway(model_class_name: str = "RFDETRBase") -> Dict[s
                     'type': 'target_shape_fallback',
                     'description': 'target_shape uses args.shape or args.resolution or (640, 640)',
                     'config_value': args.resolution,
-                    'fallback_value': '(640, 640)'
+                    'fallback_value': '(640, 640)',
+                    'is_expected': True,
+                    'note': 'This is expected graceful handling. Config provides resolution, so fallback should not trigger.'
                 })
-                print(f"  ⚠️  Fallback: target_shape uses resolution={args.resolution} or fallback (640, 640)")
+                print(f"  ℹ️  Expected Fallback: target_shape uses resolution={args.resolution} or fallback (640, 640) (graceful handling)")
         
         trace['steps'].append({
             'step': 5,
@@ -323,10 +331,10 @@ def trace_model_building_pathway(model_class_name: str = "RFDETRBase") -> Dict[s
             'transformations': transformations_found
         })
         
-        if isinstance(trace['transformations'], list):
-            trace['transformations'].extend(transformations_found)
-        else:
-            trace['transformations'] = transformations_found
+        # Store transformations found in build_model
+        if 'transformations' not in trace:
+            trace['transformations'] = []
+        trace['transformations'].extend(transformations_found)
         
     except Exception as e:
         trace['steps'].append({
@@ -444,10 +452,15 @@ def main():
         print(f"\n✅ No issues found")
     
     if trace['transformations']:
-        print(f"\nTransformations found: {len(trace['transformations'])}")
+        print(f"\nExpected Transformations Found: {len(trace['transformations'])}")
+        print("  (These are expected behaviors, not issues)")
         for trans in trace['transformations']:
             if isinstance(trans, dict) and 'type' in trans:
-                print(f"  - {trans['type']}: {trans.get('description', 'No description')}")
+                is_expected = trans.get('is_expected', False)
+                marker = "✅" if is_expected else "⚠️"
+                print(f"  {marker} {trans['type']}: {trans.get('description', 'No description')}")
+                if trans.get('note'):
+                    print(f"     Note: {trans['note']}")
     
     # Save results
     output_file = project_root / 'model_building_pathway_analysis.json'

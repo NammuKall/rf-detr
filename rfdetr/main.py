@@ -246,6 +246,39 @@ class Model:
             if 'args' in checkpoint and hasattr(checkpoint['args'], 'class_names'):
                 self.args.class_names = checkpoint['args'].class_names
                 self.class_names = checkpoint['args'].class_names
+            
+            # Validate checkpoint config compatibility with current config
+            # This accounts for transformations (e.g., num_classes increment) automatically
+            # Uses actual model num_classes from state_dict (source of truth) rather than args
+            # This fixes the root issue where checkpoint args.num_classes may not match the actual model
+            if 'args' in checkpoint:
+                from rfdetr.util.config_comparison import compare_configs
+                try:
+                    # Get current model state_dict for accurate comparison (model is already built)
+                    current_model_state_dict = self.model.state_dict() if hasattr(self, 'model') and self.model is not None else None
+                    
+                    is_compatible, differences, warnings = compare_configs(
+                        checkpoint['args'],
+                        args,
+                        checkpoint_model_state_dict=checkpoint['model'],
+                        current_model_state_dict=current_model_state_dict,
+                        critical_only=True
+                    )
+                    if differences:
+                        logger.warning(
+                            f"Config differences detected between checkpoint and current config:\n"
+                            + "\n".join(f"  - {param}: checkpoint={vals['checkpoint']}, current={vals['current']}"
+                                      for param, vals in differences.items())
+                        )
+                    if warnings:
+                        for warning in warnings:
+                            if 'CRITICAL' in warning:
+                                logger.warning(warning)
+                            else:
+                                logger.info(warning)
+                except Exception as e:
+                    # Don't fail loading if validation fails - just log
+                    logger.warning(f"Config comparison failed (non-fatal): {e}")
                 
             checkpoint_num_classes = checkpoint['model']['class_embed.bias'].shape[0]
             if checkpoint_num_classes != args.num_classes + 1:
