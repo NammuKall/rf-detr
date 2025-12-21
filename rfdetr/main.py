@@ -42,7 +42,7 @@ from rfdetr.engine import evaluate, train_one_epoch
 from rfdetr.models import build_model, build_criterion_and_postprocessors, PostProcess
 from rfdetr.util.benchmark import benchmark
 from rfdetr.util.drop_scheduler import drop_scheduler
-from rfdetr.util.files import download_file
+from rfdetr.util.files import download_file, validate_checkpoint, download_resume_checkpoint
 from rfdetr.util.get_param_dicts import get_param_dict
 from rfdetr.util.utils import ModelEma, BestMetricHolder, clean_state_dict
 
@@ -64,16 +64,110 @@ HOSTED_MODELS = {
     "rf-detr-seg-preview.pt": "https://storage.googleapis.com/rfdetr/rf-detr-seg-preview.pt",
 }
 
-def download_pretrain_weights(pretrain_weights: str, redownload=False):
-    if pretrain_weights in HOSTED_MODELS:
-        if redownload or not os.path.exists(pretrain_weights):
-            logger.info(
-                f"Downloading pretrained weights for {pretrain_weights}"
+def download_pretrain_weights(pretrain_weights: str, redownload=False, validate=True) -> bool:
+    """
+    Download pretrained weights if needed and validate the checkpoint.
+    
+    Args:
+        pretrain_weights: Path to checkpoint file (can be filename or full path)
+        redownload: Force re-download even if file exists
+        validate: Validate checkpoint structure after download
+        
+    Returns:
+        True if checkpoint exists and is valid, False otherwise
+    """
+    if pretrain_weights is None:
+        return False
+    
+    # Resolve path to absolute path for consistent handling
+    if os.path.isabs(pretrain_weights):
+        checkpoint_path = pretrain_weights
+    else:
+        # Relative path - resolve relative to current working directory
+        checkpoint_path = os.path.abspath(pretrain_weights)
+    
+    # Check if checkpoint is in HOSTED_MODELS (downloadable)
+    is_hosted = pretrain_weights in HOSTED_MODELS or os.path.basename(pretrain_weights) in HOSTED_MODELS
+    
+    # If not hosted and file doesn't exist, can't download
+    if not is_hosted:
+        if os.path.exists(checkpoint_path):
+            # File exists locally, validate if requested
+            if validate:
+                is_valid, error_msg = validate_checkpoint(checkpoint_path, required_keys=['model'])
+                if not is_valid:
+                    logger.error(f"Checkpoint validation failed: {error_msg}")
+                    return False
+            return True
+        else:
+            logger.error(
+                f"Checkpoint not found and not in HOSTED_MODELS: {pretrain_weights}\n"
+                f"Available hosted models: {list(HOSTED_MODELS.keys())}"
             )
-            download_file(
-                HOSTED_MODELS[pretrain_weights],
-                pretrain_weights,
+            return False
+    
+    # Determine the model name for HOSTED_MODELS lookup
+    model_name = pretrain_weights if pretrain_weights in HOSTED_MODELS else os.path.basename(pretrain_weights)
+    
+    # Check if file already exists and is valid
+    if os.path.exists(checkpoint_path) and not redownload:
+        if validate:
+            is_valid, error_msg = validate_checkpoint(checkpoint_path, required_keys=['model'])
+            if is_valid:
+                logger.info(f"Checkpoint already exists and is valid: {checkpoint_path}")
+                return True
+            else:
+                logger.warning(
+                    f"Existing checkpoint failed validation: {error_msg}\n"
+                    f"Will re-download..."
+                )
+                # Remove corrupted file
+                try:
+                    os.remove(checkpoint_path)
+                except Exception as e:
+                    logger.warning(f"Failed to remove corrupted checkpoint: {e}")
+        else:
+            logger.info(f"Checkpoint already exists: {checkpoint_path}")
+            return True
+    
+    # Download the checkpoint
+    url = HOSTED_MODELS[model_name]
+    logger.info(f"Downloading pretrained weights: {model_name} from {url}")
+    
+    # Ensure directory exists
+    checkpoint_dir = os.path.dirname(checkpoint_path)
+    if checkpoint_dir and not os.path.exists(checkpoint_dir):
+        try:
+            os.makedirs(checkpoint_dir, exist_ok=True)
+        except Exception as e:
+            logger.error(f"Failed to create checkpoint directory {checkpoint_dir}: {e}")
+            return False
+    
+    # Download file
+    download_success = download_file(url, checkpoint_path)
+    
+    if not download_success:
+        logger.error(f"Failed to download checkpoint: {pretrain_weights}")
+        return False
+    
+    # Validate downloaded checkpoint if requested
+    if validate:
+        is_valid, error_msg = validate_checkpoint(checkpoint_path, required_keys=['model'])
+        if not is_valid:
+            logger.error(
+                f"Downloaded checkpoint failed validation: {error_msg}\n"
+                f"This may indicate a corrupted download or server issue."
             )
+            # Remove corrupted file
+            try:
+                os.remove(checkpoint_path)
+            except Exception as e:
+                logger.warning(f"Failed to remove corrupted checkpoint: {e}")
+            return False
+        else:
+            logger.info(f"Successfully downloaded and validated checkpoint: {checkpoint_path}")
+    
+    return True
 
 class Model:
     def __init__(self, **kwargs):
@@ -83,14 +177,69 @@ class Model:
         self.model = build_model(args)
         self.device = torch.device(args.device)
         if args.pretrain_weights is not None:
-            print("Loading pretrain weights")
+            logger.info(f"Preparing to load pretrain weights: {args.pretrain_weights}")
+            
+            # Step 1: Ensure checkpoint exists and is valid (download if needed)
+            checkpoint_available = download_pretrain_weights(
+                args.pretrain_weights, 
+                redownload=False, 
+                validate=True
+            )
+            
+            if not checkpoint_available:
+                # Check if it's a custom path (not in HOSTED_MODELS)
+                checkpoint_name = os.path.basename(args.pretrain_weights)
+                if checkpoint_name not in HOSTED_MODELS and args.pretrain_weights not in HOSTED_MODELS:
+                    raise FileNotFoundError(
+                        f"Checkpoint not found: {args.pretrain_weights}\n"
+                        f"This checkpoint is not available for automatic download.\n"
+                        f"Please ensure the file exists at the specified path.\n"
+                        f"Available hosted models: {list(HOSTED_MODELS.keys())}"
+                    )
+                else:
+                    # Try re-downloading once more
+                    logger.warning(
+                        f"Initial checkpoint validation failed for {args.pretrain_weights}. "
+                        f"Attempting to re-download..."
+                    )
+                    checkpoint_available = download_pretrain_weights(
+                        args.pretrain_weights, 
+                        redownload=True, 
+                        validate=True
+                    )
+                    if not checkpoint_available:
+                        raise RuntimeError(
+                            f"Failed to download or validate checkpoint: {args.pretrain_weights}\n"
+                            f"This may indicate:\n"
+                            f"  - Network connectivity issues\n"
+                            f"  - Corrupted download\n"
+                            f"  - Server-side issues\n"
+                            f"Please check your internet connection and try again, or manually download the checkpoint."
+                        )
+            
+            # Step 2: Load checkpoint (now guaranteed to exist and be valid)
+            logger.info(f"Loading pretrain weights from: {args.pretrain_weights}")
             try:
                 checkpoint = torch.load(args.pretrain_weights, map_location='cpu', weights_only=False)
             except Exception as e:
-                print(f"Failed to load pretrain weights: {e}")
-                # re-download weights if they are corrupted
-                print("Failed to load pretrain weights, re-downloading")
-                download_pretrain_weights(args.pretrain_weights, redownload=True)
+                # This should rarely happen since we validated, but handle gracefully
+                logger.error(
+                    f"Failed to load checkpoint despite validation: {e}\n"
+                    f"The checkpoint file may have become corrupted after validation.\n"
+                    f"Attempting to re-download..."
+                )
+                # Try one more re-download
+                checkpoint_available = download_pretrain_weights(
+                    args.pretrain_weights, 
+                    redownload=True, 
+                    validate=True
+                )
+                if not checkpoint_available:
+                    raise RuntimeError(
+                        f"Failed to load checkpoint after re-download: {args.pretrain_weights}\n"
+                        f"Original error: {e}\n"
+                        f"Please check the checkpoint file manually or contact support."
+                    )
                 checkpoint = torch.load(args.pretrain_weights, map_location='cpu', weights_only=False)
 
             # Extract class_names from checkpoint if available
@@ -113,11 +262,11 @@ class Model:
                 for modify_key_to_load in args.pretrain_keys_modify_to_load:
                     try:
                         checkpoint['model'][modify_key_to_load] = get_coco_pretrain_from_obj365(
-                            model_without_ddp.state_dict()[modify_key_to_load],
+                            self.model.state_dict()[modify_key_to_load],
                             checkpoint['model'][modify_key_to_load]
                         )
-                    except:
-                        print(f"Failed to load {modify_key_to_load}, deleting from checkpoint")
+                    except Exception as e:
+                        logger.warning(f"Failed to load {modify_key_to_load}, deleting from checkpoint: {e}")
                         checkpoint['model'].pop(modify_key_to_load)
 
             # we may want to resume training with a smaller number of groups for group detr
@@ -286,18 +435,58 @@ class Model:
                 del benchmark_model
         
         if args.resume:
-            checkpoint = torch.load(args.resume, map_location='cpu', weights_only=False)
+            logger.info(f"Resuming training from checkpoint: {args.resume}")
+            
+            # Step 1: Ensure checkpoint exists (download if URL, validate if local)
+            try:
+                resume_checkpoint_path = download_resume_checkpoint(args.resume, validate=True)
+            except (FileNotFoundError, RuntimeError) as e:
+                raise RuntimeError(
+                    f"Failed to prepare resume checkpoint: {e}\n"
+                    f"Please check:\n"
+                    f"  - Checkpoint path/URL is correct\n"
+                    f"  - Network connectivity (if using URL)\n"
+                    f"  - File permissions (if using local path)"
+                ) from e
+            
+            # Step 2: Load checkpoint (now guaranteed to exist and be valid)
+            try:
+                checkpoint = torch.load(resume_checkpoint_path, map_location='cpu', weights_only=False)
+            except Exception as e:
+                raise RuntimeError(
+                    f"Failed to load resume checkpoint despite validation: {e}\n"
+                    f"Checkpoint path: {resume_checkpoint_path}\n"
+                    f"The checkpoint file may have become corrupted after validation.\n"
+                    f"If using a URL, try re-downloading by removing the cached file."
+                ) from e
+            
+            # Step 3: Load model state
+            logger.info("Loading model state from checkpoint...")
             model_without_ddp.load_state_dict(checkpoint['model'], strict=True)
+            
+            # Step 4: Load EMA model if applicable
             if args.use_ema:
                 if 'ema_model' in checkpoint:
+                    logger.info("Loading EMA model state from checkpoint...")
                     self.ema_m.module.load_state_dict(clean_state_dict(checkpoint['ema_model']))
                 else:
+                    logger.warning("EMA model not found in checkpoint, reinitializing EMA...")
                     del self.ema_m
-                    self.ema_m = ModelEma(model, decay=args.ema_decay, tau=args.ema_tau) 
-            if not args.eval and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:                
+                    self.ema_m = ModelEma(model, decay=args.ema_decay, tau=args.ema_tau)
+            
+            # Step 5: Load optimizer and scheduler state if available
+            if not args.eval and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
+                logger.info("Loading optimizer and scheduler state from checkpoint...")
                 optimizer.load_state_dict(checkpoint['optimizer'])
                 lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
                 args.start_epoch = checkpoint['epoch'] + 1
+                logger.info(f"Resuming from epoch {args.start_epoch}")
+            else:
+                if not args.eval:
+                    logger.warning(
+                        "Checkpoint missing optimizer/scheduler/epoch information. "
+                        "Starting from epoch 0."
+                    )
 
         if args.eval:
             test_stats, coco_evaluator = evaluate(

@@ -66,8 +66,70 @@ class RFDETR:
     def maybe_download_pretrain_weights(self):
         """
         Download pre-trained weights if they are not already downloaded.
+        
+        This method ensures the checkpoint exists and is valid before model initialization.
+        Handles None cases gracefully and validates checkpoints before use.
+        
+        Behavior:
+        - If pretrain_weights is None: Logs info and continues (model will train from scratch)
+        - If pretrain_weights is provided: Downloads/validates checkpoint before model initialization
+        - If download/validation fails: Logs warning but allows Model.__init__ to handle errors
         """
-        download_pretrain_weights(self.model_config.pretrain_weights)
+        if self.model_config.pretrain_weights is None:
+            logger.info(
+                "No pretrain_weights specified. Model will be initialized from scratch "
+                "(backbone weights may still be loaded from pretrained encoder if specified)."
+            )
+            return
+        
+        # Validate that pretrain_weights is a string (not empty or wrong type)
+        if not isinstance(self.model_config.pretrain_weights, str):
+            logger.error(
+                f"Invalid pretrain_weights type: {type(self.model_config.pretrain_weights).__name__}. "
+                f"Expected str or None, got {type(self.model_config.pretrain_weights).__name__}."
+            )
+            raise TypeError(
+                f"pretrain_weights must be a string or None, got {type(self.model_config.pretrain_weights).__name__}"
+            )
+        
+        if not self.model_config.pretrain_weights.strip():
+            logger.error("pretrain_weights is an empty string. Use None if no pretrained weights are needed.")
+            raise ValueError("pretrain_weights cannot be an empty string. Use None if no pretrained weights are needed.")
+        
+        pretrain_path = self.model_config.pretrain_weights.strip()
+        logger.info(f"Preparing pretrain weights: {pretrain_path}")
+        
+        # Attempt to download and validate checkpoint
+        try:
+            success = download_pretrain_weights(
+                pretrain_path,
+                redownload=False,
+                validate=True
+            )
+            
+            if success:
+                logger.info(
+                    f"Pretrain weights ready: {pretrain_path}\n"
+                    f"Checkpoint exists and is valid. Model initialization will proceed."
+                )
+            else:
+                logger.warning(
+                    f"Could not download or validate checkpoint: {pretrain_path}\n"
+                    f"Model initialization will attempt to handle this. If initialization fails, "
+                    f"please check:\n"
+                    f"  - Network connectivity (if downloading from URL)\n"
+                    f"  - Checkpoint path is correct\n"
+                    f"  - File permissions (if using local path)\n"
+                    f"  - Sufficient disk space\n"
+                    f"  - Checkpoint is in HOSTED_MODELS or exists locally"
+                )
+        except Exception as e:
+            logger.error(
+                f"Unexpected error while preparing pretrain weights: {e}\n"
+                f"Model initialization will continue, but may fail if checkpoint is required."
+            )
+            # Don't raise - let Model.__init__ handle the error
+            # This allows for graceful degradation if checkpoint is optional
 
     def get_model_config(self, **kwargs):
         """
