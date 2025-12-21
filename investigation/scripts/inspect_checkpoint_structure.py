@@ -18,7 +18,7 @@ from typing import Dict, Any, Optional, List
 from collections import defaultdict
 
 # Add project root to path
-project_root = Path(__file__).parent
+project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from rfdetr.main import HOSTED_MODELS
@@ -369,7 +369,7 @@ def main():
         print(f"   {failed}")
     
     # Save results to JSON
-    output_file = project_root / 'checkpoint_structure_analysis.json'
+    output_file = Path(__file__).parent.parent / "data" / 'checkpoint_structure_analysis.json'
     results = {
         'analyses': analyses,
         'comparison': comparison if analyses else {},

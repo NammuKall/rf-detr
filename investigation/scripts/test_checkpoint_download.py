@@ -18,7 +18,7 @@ import shutil
 from pathlib import Path
 
 # Add project root to path
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from rfdetr.util.files import validate_checkpoint, download_file
 from rfdetr.main import download_pretrain_weights, HOSTED_MODELS
