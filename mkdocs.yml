@@ -1,0 +1,124 @@
+site_name: RF-DETR
+site_url: https://rf-detr.roboflow.com
+site_author: Roboflow
+site_description: RF-DETR - Real-Time Detection Transformer
+
+repo_url: https://github.com/roboflow/rf-detr
+repo_name: roboflow/rf-detr
+
+copyright: Copyright &copy; 2024 Roboflow
+
+extra:
+  homepage: https://rf-detr.roboflow.com
+
+theme:
+  name: material
+  custom_dir: docs/theme
+  logo: assets/roboflow-logo.svg
+  favicon: assets/roboflow-logo.svg
+  palette:
+    - scheme: default
+      primary: custom
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: custom
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  font:
+    text: Roboto
+    code: Roboto Mono
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.footer
+    - navigation.indexes
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.tabs.link
+    - content.code.copy
+    - content.code.annotate
+
+extra_css:
+  - stylesheets/rf.css
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [.]
+          options:
+            docstring_style: google
+            show_source: true
+            show_bases: true
+            show_root_heading: true
+            show_root_full_path: false
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            members_order: source
+            heading_level: 2
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.magiclink
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+nav:
+  - Home: index.md
+  - Learn:
+    - Pretrained Models: learn/pretrained.md
+    - Training: learn/train/index.md
+    - Deployment: learn/deploy.md
+    - Benchmarks: learn/benchmarks.md
+    - Run:
+      - Detection: learn/run/detection.md
+      - Segmentation: learn/run/segmentation.md
+  - Tutorials:
+    - tutorials/index.md
+  - API Reference:
+    - RFDETR: reference/rfdetr.md
+    - RFDETRBase: reference/base.md
+    - RFDETRSmall: reference/small.md
+    - RFDETRMedium: reference/medium.md
+    - RFDETRLarge: reference/large.md
+    - RFDETRNano: reference/nano.md
+    - Segmentation (Preview): reference/seg_preview.md
+

@@ -8,7 +8,6 @@ import os
 import requests
 from tqdm import tqdm
 from logging import getLogger
-from typing import Optional
 from urllib.parse import urlparse
 
 logger = getLogger(__name__)

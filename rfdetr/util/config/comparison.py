@@ -208,7 +208,7 @@ def validate_checkpoint_config_compatibility(
     )
     
     if differences:
-        logger.warning(f"Config differences found between checkpoint and current config:")
+        logger.warning("Config differences found between checkpoint and current config:")
         for param, vals in differences.items():
             logger.warning(f"  {param}: checkpoint={vals['checkpoint']}, current={vals['current']}")
     

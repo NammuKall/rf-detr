@@ -4,8 +4,6 @@
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]
 # ------------------------------------------------------------------------
 
-from pydantic import model_validator
-from typing import List
 
 def get_required_fields(cls):
     """Get list of required fields from ModelConfig base class.

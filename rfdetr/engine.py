@@ -18,7 +18,6 @@
 Train and eval functions used in main.py
 """
 import math
-import sys
 from typing import Iterable
 import random
 
@@ -228,7 +227,7 @@ def coco_extended_metrics(coco_eval):
 
     score_vec = S[iou50_idx, best_j, :, area_idx, maxdet_idx].astype(float)
     score_vec[prec_raw[best_j] < 0] = np.nan
-    score_thr = float(np.nanmean(score_vec))
+    float(np.nanmean(score_vec))
 
     map_50_95, map_50 = float(coco_eval.stats[0]), float(coco_eval.stats[1])
 

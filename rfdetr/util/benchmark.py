@@ -13,8 +13,6 @@
 from collections import OrderedDict, Counter, defaultdict
 import json
 import os
-import pdb
-from posixpath import join
 import sys
 
 
@@ -32,7 +30,7 @@ from functools import partial
 import time
 
 
-from typing import Any, Callable, List, Optional, Union
+from typing import Any, Callable, List, Union
 from numbers import Number
 
 Handle = Callable[[List[Any], List[Any]], Union[typing.Counter[str], Number]]
@@ -559,7 +557,7 @@ def flop_count(
 
 def warmup(model, inputs, N=10):
     for i in range(N):
-        out = model(inputs)
+        model(inputs)
     torch.cuda.synchronize()
 
 
@@ -567,7 +565,7 @@ def measure_time(model, inputs, N=10):
     warmup(model, inputs)
     s = time.time()
     for i in range(N):
-        out = model(inputs)
+        model(inputs)
     torch.cuda.synchronize()
     t = (time.time() - s) / N
     return t

@@ -6,8 +6,10 @@
 """
 onnx optimizer and symbolic registry
 """
-from . import optimizer
-from . import symbolic
+from . import optimizer as optimizer
+from . import symbolic as symbolic
 
 from .optimizer import OnnxOptimizer
 from .symbolic import CustomOpSymbolicRegistry
+
+__all__ = ["optimizer", "symbolic", "OnnxOptimizer", "CustomOpSymbolicRegistry"]
