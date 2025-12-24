@@ -10,33 +10,31 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 # ------------------------------------------------------------------------
 
-from collections import OrderedDict, Counter, defaultdict
 import json
 import os
 import sys
-
+from collections import Counter, OrderedDict, defaultdict
 
 sys.path.append(os.path.dirname(sys.path[0]))
 
-import numpy as np
-from numpy import prod
-from itertools import zip_longest
-import tqdm
 import logging
+import time
 import typing
+from functools import partial
+from itertools import zip_longest
+from numbers import Number
+from typing import Any, Callable, Union
+
+import numpy as np
 import torch
 import torch.nn as nn
-from functools import partial
-import time
+import tqdm
+from numpy import prod
+
+Handle = Callable[[list[Any], list[Any]], Union[typing.Counter[str], Number]]
 
 
-from typing import Any, Callable, List, Union
-from numbers import Number
-
-Handle = Callable[[List[Any], List[Any]], Union[typing.Counter[str], Number]]
-
-
-def get_shape(val: object) -> typing.List[int]:
+def get_shape(val: object) -> list[int]:
     """
     Get the shapes from a jit value object.
     Args:
@@ -62,7 +60,7 @@ def get_shape(val: object) -> typing.List[int]:
 
 
 def addmm_flop_jit(
-    inputs: typing.List[object], outputs: typing.List[object]
+    inputs: list[object], outputs: list[object]
 ) -> typing.Counter[str]:
     """
     This method counts the flops for fully connected layers with torch script.
@@ -151,9 +149,9 @@ def _reduction_op_flop_jit(inputs, outputs, reduce_flops=1, finalize_flops=0):
 
 
 def conv_flop_count(
-    x_shape: typing.List[int],
-    w_shape: typing.List[int],
-    out_shape: typing.List[int],
+    x_shape: list[int],
+    w_shape: list[int],
+    out_shape: list[int],
 ) -> typing.Counter[str]:
     """
     This method counts the flops for convolution. Note only multiplication is
@@ -175,7 +173,7 @@ def conv_flop_count(
 
 
 def conv_flop_jit(
-    inputs: typing.List[object], outputs: typing.List[object]
+    inputs: list[object], outputs: list[object]
 ) -> typing.Counter[str]:
     """
     This method counts the flops for convolution using torch script.
@@ -204,7 +202,7 @@ def conv_flop_jit(
 
 
 def einsum_flop_jit(
-    inputs: typing.List[object], outputs: typing.List[object]
+    inputs: list[object], outputs: list[object]
 ) -> typing.Counter[str]:
     """
     This method counts the flops for the einsum operation. We currently support
@@ -252,7 +250,7 @@ def einsum_flop_jit(
 
 
 def matmul_flop_jit(
-    inputs: typing.List[object], outputs: typing.List[object]
+    inputs: list[object], outputs: list[object]
 ) -> typing.Counter[str]:
     """
     This method counts the flops for matmul.
@@ -285,7 +283,7 @@ def matmul_flop_jit(
 
 
 def batchnorm_flop_jit(
-    inputs: typing.List[object], outputs: typing.List[object]
+    inputs: list[object], outputs: list[object]
 ) -> typing.Counter[str]:
     """
     This method counts the flops for batch norm.
@@ -306,7 +304,7 @@ def batchnorm_flop_jit(
     return flop_counter
 
 
-def linear_flop_jit(inputs: List[Any], outputs: List[Any]) -> Number:
+def linear_flop_jit(inputs: list[Any], outputs: list[Any]) -> Number:
     """
     Count flops for the aten::linear operator.
     """
@@ -327,7 +325,7 @@ def norm_flop_counter(affine_arg_index: int) -> Handle:
         affine_arg_index: index of the affine argument in inputs
     """
 
-    def norm_flop_jit(inputs: List[Any], outputs: List[Any]) -> Number:
+    def norm_flop_jit(inputs: list[Any], outputs: list[Any]) -> Number:
         """
         Count flops for norm layers.
         """
@@ -353,7 +351,7 @@ def elementwise_flop_counter(input_scale: float = 1, output_scale: float = 0) ->
         output_scale: scale of the output tensor (first element in outputs)
     """
 
-    def elementwise_flop(inputs: List[Any], outputs: List[Any]) -> Number:
+    def elementwise_flop(inputs: list[Any], outputs: list[Any]) -> Number:
         ret = 0
         if input_scale != 0:
             shape = get_shape(inputs[0])
@@ -368,7 +366,7 @@ def elementwise_flop_counter(input_scale: float = 1, output_scale: float = 0) ->
 
 
 # A dictionary that maps supported operations to their flop count jit handles.
-_SUPPORTED_OPS: typing.Dict[str, typing.Callable] = {
+_SUPPORTED_OPS: dict[str, typing.Callable] = {
     "aten::addmm": addmm_flop_jit,
     "aten::_convolution": conv_flop_jit,
     "aten::einsum": einsum_flop_jit,
@@ -406,7 +404,7 @@ _SUPPORTED_OPS: typing.Dict[str, typing.Callable] = {
 
 
 # A list that contains ignored operations.
-_IGNORED_OPS: typing.List[str] = [
+_IGNORED_OPS: list[str] = [
     "aten::Int",
     "aten::__and__",
     "aten::arange",
@@ -468,10 +466,10 @@ _HAS_ALREADY_SKIPPED = False
 
 def flop_count(
     model: nn.Module,
-    inputs: typing.Tuple[object, ...],
-    whitelist: typing.Union[typing.List[str], None] = None,
-    customized_ops: typing.Union[typing.Dict[str, typing.Callable], None] = None,
-) -> typing.DefaultDict[str, float]:
+    inputs: tuple[object, ...],
+    whitelist: typing.Union[list[str], None] = None,
+    customized_ops: typing.Union[dict[str, typing.Callable], None] = None,
+) -> defaultdict[str, float]:
     """
     Given a model and an input to the model, compute the Gflops of the given
     model. Note the input should have a batch size of 1.
@@ -545,7 +543,7 @@ def flop_count(
     if len(skipped_ops) > 0 and not _HAS_ALREADY_SKIPPED:
         _HAS_ALREADY_SKIPPED = True
         for op, freq in skipped_ops.items():
-            logging.warning("Skipped operation {} {} time(s)".format(op, freq))
+            logging.warning(f"Skipped operation {op} {freq} time(s)")
 
     # Convert flop count to gigaflops.
     final_count = defaultdict(float)
@@ -556,7 +554,7 @@ def flop_count(
 
 
 def warmup(model, inputs, N=10):
-    for i in range(N):
+    for _i in range(N):
         model(inputs)
     torch.cuda.synchronize()
 
@@ -564,7 +562,7 @@ def warmup(model, inputs, N=10):
 def measure_time(model, inputs, N=10):
     warmup(model, inputs)
     s = time.time()
-    for i in range(N):
+    for _i in range(N):
         model(inputs)
     torch.cuda.synchronize()
     t = (time.time() - s) / N

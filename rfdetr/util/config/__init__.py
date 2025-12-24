@@ -5,8 +5,8 @@
 # ------------------------------------------------------------------------
 
 from rfdetr.util.config.comparison import (
-    normalize_args_for_comparison,
     compare_configs,
+    normalize_args_for_comparison,
     validate_checkpoint_config_compatibility,
 )
 

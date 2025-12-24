@@ -18,25 +18,29 @@
 Train and eval functions used in main.py
 """
 import math
-from typing import Iterable
 import random
+from collections.abc import Iterable
 
 import torch
 import torch.nn.functional as F
 
 import rfdetr.util.misc as utils
-from rfdetr.datasets.coco_eval import CocoEvaluator
 from rfdetr.datasets.coco import compute_multi_scale_scales
+from rfdetr.datasets.coco_eval import CocoEvaluator
 
 try:
-    from torch.amp import autocast, GradScaler
+    from torch.amp import GradScaler, autocast
     DEPRECATED_AMP = False
 except ImportError:
-    from torch.cuda.amp import autocast, GradScaler
+    from torch.cuda.amp import GradScaler, autocast
     DEPRECATED_AMP = True
-from typing import DefaultDict, List, Callable
-from rfdetr.util.misc import NestedTensor
+from collections import defaultdict
+from typing import Callable
+
 import numpy as np
+
+from rfdetr.util.misc import NestedTensor
+
 
 def get_autocast_args(args):
     if DEPRECATED_AMP:
@@ -56,18 +60,20 @@ def train_one_epoch(
     batch_size: int,
     max_norm: float = 0,
     ema_m: torch.nn.Module = None,
-    schedules: dict = {},
+    schedules: dict = None,
     num_training_steps_per_epoch=None,
     vit_encoder_num_layers=None,
     args=None,
-    callbacks: DefaultDict[str, List[Callable]] = None,
+    callbacks: defaultdict[str, list[Callable]] = None,
 ):
+    if schedules is None:
+        schedules = {}
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter("lr", utils.SmoothedValue(window_size=1, fmt="{value:.6f}"))
     metric_logger.add_meter(
         "class_error", utils.SmoothedValue(window_size=1, fmt="{value:.2f}")
     )
-    header = "Epoch: [{}]".format(epoch)
+    header = f"Epoch: [{epoch}]"
     print_freq = 10
     start_steps = epoch * num_training_steps_per_epoch
 
@@ -93,7 +99,7 @@ def train_one_epoch(
             samples.tensors = utils.ensure_regular_tensor(samples.tensors)
             if samples.mask is not None:
                 samples.mask = utils.ensure_regular_tensor(samples.mask)
-        
+
         it = start_steps + data_iter_step
         callback_dict = {
             "step": it,
@@ -123,12 +129,12 @@ def train_one_epoch(
             # This prevents inference tensor properties from propagating through interpolation
             input_tensors = utils.ensure_regular_tensor(samples.tensors)
             input_mask = utils.ensure_regular_tensor(samples.mask)
-            
+
             # Interpolate - ensure we're in the right autograd context
             with torch.enable_grad():
                 interpolated_tensors = F.interpolate(input_tensors, size=scale, mode='bilinear', align_corners=False)
                 interpolated_mask = F.interpolate(input_mask.unsqueeze(1).float(), size=scale, mode='nearest').squeeze(1).bool()
-            
+
             # Ensure outputs are also regular tensors
             samples.tensors = utils.ensure_regular_tensor(interpolated_tensors)
             samples.mask = utils.ensure_regular_tensor(interpolated_mask)
@@ -175,7 +181,7 @@ def train_one_epoch(
 
         if not math.isfinite(loss_value):
             print(loss_dict_reduced)
-            raise ValueError("Loss is {}, stopping training".format(loss_value))
+            raise ValueError(f"Loss is {loss_value}, stopping training")
 
         if max_norm > 0:
             scaler.unscale_(optimizer)

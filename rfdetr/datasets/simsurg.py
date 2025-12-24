@@ -33,40 +33,40 @@ from .coco import (
 def build_simsurg(image_set, args, resolution):
     """
     Build a SimSurg dataset for the given image set.
-    
+
     Args:
         image_set: One of 'train', 'val', 'test'
         args: Arguments containing dataset configuration
         resolution: Image resolution for transforms
-        
+
     Returns:
         CocoDetection dataset instance
     """
     root = Path(args.dataset_dir)
     assert root.exists(), f"provided SimSurg path {root} does not exist"
-    
+
     # SimSurg COCO format paths
     PATHS = {
         "train": (root / "train" / "images", root / "annotations" / "instances_train.json"),
         "val": (root / "val" / "images", root / "annotations" / "instances_val.json"),
         "test": (root / "test" / "images", root / "annotations" / "instances_test.json"),
     }
-    
+
     img_folder, ann_file = PATHS[image_set.split("_")[0]]
-    
+
     assert img_folder.exists(), f"SimSurg image folder {img_folder} does not exist"
     assert ann_file.exists(), f"SimSurg annotation file {ann_file} does not exist"
-    
+
     try:
         square_resize_div_64 = args.square_resize_div_64
     except AttributeError:
         square_resize_div_64 = False
-    
+
     try:
         include_masks = args.segmentation_head
     except AttributeError:
         include_masks = False
-    
+
     if square_resize_div_64:
         dataset = CocoDetection(
             img_folder,
@@ -97,5 +97,5 @@ def build_simsurg(image_set, args, resolution):
             ),
             include_masks=include_masks,
         )
-    
+
     return dataset

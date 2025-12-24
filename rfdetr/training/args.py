@@ -25,7 +25,7 @@ def get_args_parser():
     parser.add_argument('--lr_component_decay', default=1.0, type=float)
     parser.add_argument('--do_benchmark', action='store_true', help='benchmark the model')
 
-    # drop args 
+    # drop args
     # dropout and stochastic depth drop rate; set at most one to non-zero
     parser.add_argument('--dropout', type=float, default=0,
                         help='Drop path rate (default: 0.0)')
@@ -42,11 +42,11 @@ def get_args_parser():
                         help='if drop_mode is early / late, this is the epoch where dropout ends / starts')
 
     # Model parameters
-    parser.add_argument('--pretrained_encoder', type=str, default=None, 
+    parser.add_argument('--pretrained_encoder', type=str, default=None,
                         help="Path to the pretrained encoder.")
-    parser.add_argument('--pretrain_weights', type=str, default=None, 
+    parser.add_argument('--pretrain_weights', type=str, default=None,
                         help="Path to the pretrained model.")
-    parser.add_argument('--pretrain_exclude_keys', type=str, default=None, nargs='+', 
+    parser.add_argument('--pretrain_exclude_keys', type=str, default=None, nargs='+',
                         help="Keys you do not want to load.")
     parser.add_argument('--pretrain_keys_modify_to_load', type=str, default=None, nargs='+',
                         help="Keys you want to modify to load. Only used when loading objects365 pre-trained weights.")
@@ -60,7 +60,7 @@ def get_args_parser():
     parser.add_argument('--vit_encoder_num_layers', default=12, type=int,
                         help="Number of layers used in ViT encoder")
     parser.add_argument('--window_block_indexes', default=None, type=int, nargs='+')
-    parser.add_argument('--position_embedding', default='sine', type=str, 
+    parser.add_argument('--position_embedding', default='sine', type=str,
                         choices=('sine', 'learned'),
                         help="Type of positional embedding to use on top of the image features")
     parser.add_argument('--out_feature_indexes', default=[-1], type=int, nargs='+', help='only for vit now')
@@ -108,7 +108,7 @@ def get_args_parser():
     parser.add_argument('--bbox_loss_coef', default=5, type=float)
     parser.add_argument('--giou_loss_coef', default=2, type=float)
     parser.add_argument('--focal_alpha', default=0.25, type=float)
-    
+
     # Loss
     parser.add_argument('--no_aux_loss', dest='aux_loss', action='store_false',
                         help="Disables auxiliary decoding losses (loss at each layer)")
@@ -145,11 +145,11 @@ def get_args_parser():
                         help='device to use for training / testing')
     parser.add_argument('--world_size', default=1, type=int,
                         help='number of distributed processes')
-    parser.add_argument('--dist_url', default='env://', 
+    parser.add_argument('--dist_url', default='env://',
                         help='url used to set up distributed training')
     parser.add_argument('--sync_bn', default=True, type=bool,
                         help='setup synchronized BatchNorm for distributed training')
-    
+
     # fp16
     parser.add_argument('--fp16_eval', default=False, action='store_true',
                         help='evaluate in fp16 precision.')
@@ -162,7 +162,7 @@ def get_args_parser():
     parser.add_argument('--multi_scale', action='store_true', help='use multi scale')
     parser.add_argument('--expanded_scales', action='store_true', help='use expanded scales')
     parser.add_argument('--do_random_resize_via_padding', action='store_true', help='use random resize via padding')
-    parser.add_argument('--warmup_epochs', default=1, type=float, 
+    parser.add_argument('--warmup_epochs', default=1, type=float,
         help='Number of warmup epochs for linear warmup before cosine annealing')
     # Add scheduler type argument: 'step' or 'cosine'
     parser.add_argument(
@@ -171,7 +171,7 @@ def get_args_parser():
         choices=['step', 'cosine'],
         help="Type of learning rate scheduler to use: 'step' (default) or 'cosine'"
     )
-    parser.add_argument('--lr_min_factor', default=0.0, type=float, 
+    parser.add_argument('--lr_min_factor', default=0.0, type=float,
         help='Minimum learning rate factor (as a fraction of initial lr) at the end of cosine annealing')
     # Early stopping parameters
     parser.add_argument('--early_stopping', action='store_true',
@@ -215,28 +215,28 @@ def populate_args(
     lr_vit_layer_decay=0.8,
     lr_component_decay=1.0,
     do_benchmark=False,
-    
+
     # Drop parameters
     dropout=0,
     drop_path=0,
     drop_mode='standard',
     drop_schedule='constant',
     cutoff_epoch=0,
-    
+
     # Model parameters
     pretrained_encoder=None,
-    pretrain_weights=None, 
+    pretrain_weights=None,
     pretrain_exclude_keys=None,
     pretrain_keys_modify_to_load=None,
     pretrained_distiller=None,
     strict_checkpoint_validation=True,  # If True, fail on critical config mismatches
-    
+
     # Backbone parameters
     encoder='dinov2_windowed_small',  # Base model default (was 'vit_tiny', fixed to match RFDETRBaseConfig)
     vit_encoder_num_layers=12,
     window_block_indexes=None,
     position_embedding='sine',
-    out_feature_indexes=[2, 5, 8, 11],  # Base model default (was [-1], fixed to match RFDETRBaseConfig)
+    out_feature_indexes=None,  # Base model default (was [-1], fixed to match RFDETRBaseConfig)
     freeze_encoder=False,
     layer_norm=True,  # Base model default (was False, fixed to match ModelConfig)
     rms_norm=False,
@@ -247,7 +247,7 @@ def populate_args(
     positional_encoding_size=37,  # Base model default (matches RFDETRBaseConfig)
     segmentation_head=False,  # Default to False (matches ModelConfig)
     mask_downsample_ratio=4,  # Default value (matches ModelConfig)
-    
+
     # Transformer parameters
     dec_layers=3,
     dim_feedforward=2048,
@@ -257,7 +257,7 @@ def populate_args(
     num_queries=300,
     group_detr=13,
     two_stage=True,  # Base model default (was False, fixed to match ModelConfig)
-    projector_scale=['P4'],  # Base model default (was 'P4', fixed to match RFDETRBaseConfig - must be list)
+    projector_scale=None,  # Base model default (was 'P4', fixed to match RFDETRBaseConfig - must be list)
     lite_refpoint_refine=True,  # Base model default (was False, fixed to match ModelConfig)
     num_select=300,  # Base model default (was 100, fixed to match RFDETRBaseConfig)
     dec_n_points=2,  # Base model default (was 4, fixed to match RFDETRBaseConfig)
@@ -268,12 +268,12 @@ def populate_args(
     num_encoder_layers=0,
     enc_n_points=4,
     use_cross_scale_fusion=False,
-    
+
     # Matcher parameters
     set_cost_class=2,
     set_cost_bbox=5,
     set_cost_giou=2,
-    
+
     # Loss coefficients
     cls_loss_coef=2,
     bbox_loss_coef=5,
@@ -284,13 +284,13 @@ def populate_args(
     use_varifocal_loss=False,
     use_position_supervised_loss=False,
     ia_bce_loss=False,
-    
+
     # Dataset parameters
     dataset_file='coco',
     coco_path=None,
     dataset_dir=None,
     square_resize_div_64=False,
-    
+
     # Output parameters
     output_dir='output',
     dont_save_weights=False,
@@ -303,16 +303,16 @@ def populate_args(
     ema_decay=0.9997,
     ema_tau=0,
     num_workers=2,
-    
+
     # Distributed training parameters
     device='cuda',
     world_size=1,
     dist_url='env://',
     sync_bn=True,
-    
+
     # FP16
     fp16_eval=False,
-    
+
     # Custom args
     encoder_only=False,
     backbone_only=False,
@@ -334,6 +334,10 @@ def populate_args(
     subcommand=None,
     **extra_kwargs  # To handle any unexpected arguments
 ):
+    if projector_scale is None:
+        projector_scale = ['P4']
+    if out_feature_indexes is None:
+        out_feature_indexes = [2, 5, 8, 11]
     args = argparse.Namespace(
         num_classes=num_classes,
         grad_accum_steps=grad_accum_steps,

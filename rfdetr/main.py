@@ -24,10 +24,11 @@ import os
 import random
 import shutil
 import time
+from collections import defaultdict
 from copy import deepcopy
 from logging import getLogger
 from pathlib import Path
-from typing import DefaultDict, List, Callable
+from typing import Callable
 
 import numpy as np
 import torch
@@ -37,19 +38,19 @@ from torch.utils.data import DataLoader, DistributedSampler
 import rfdetr.util.misc as utils
 from rfdetr.datasets import build_dataset, get_coco_api_from_dataset
 from rfdetr.engine import evaluate, train_one_epoch
-from rfdetr.models import build_model, build_criterion_and_postprocessors, PostProcess
-from rfdetr.util.benchmark import benchmark
-from rfdetr.util.drop_scheduler import drop_scheduler
-from rfdetr.util.get_param_dicts import get_param_dict
-from rfdetr.util.utils import ModelEma, BestMetricHolder
+from rfdetr.models import PostProcess, build_criterion_and_postprocessors, build_model
 from rfdetr.training import (
+    create_lr_scheduler,
     download_pretrain_weights,
+    get_args_parser,
     load_pretrain_checkpoint,
     load_resume_checkpoint,
     populate_args,
-    get_args_parser,
-    create_lr_scheduler,
 )
+from rfdetr.util.benchmark import benchmark
+from rfdetr.util.drop_scheduler import drop_scheduler
+from rfdetr.util.get_param_dicts import get_param_dict
+from rfdetr.util.utils import BestMetricHolder, ModelEma
 
 if str(os.environ.get("USE_FILE_SYSTEM_SHARING", "False")).lower() in ["true", "1"]:
     import torch.multiprocessing
@@ -61,7 +62,7 @@ logger = getLogger(__name__)
 def main(**kwargs):
     """
     Main training entry point.
-    
+
     Creates a Model instance and trains it with the provided configuration.
     """
     model = Model(**kwargs)
@@ -72,7 +73,7 @@ def main(**kwargs):
 def distill(**kwargs):
     """
     Distillation training entry point.
-    
+
     Note: Distillation functionality may need to be implemented separately.
     For now, this falls back to regular training.
     """
@@ -89,14 +90,14 @@ class Model:
         self.device = torch.device(args.device)
         if args.pretrain_weights is not None:
             logger.info(f"Preparing to load pretrain weights: {args.pretrain_weights}")
-            
+
             # Step 1: Ensure checkpoint exists and is valid (download if needed)
             checkpoint_available = download_pretrain_weights(
-                args.pretrain_weights, 
-                redownload=False, 
+                args.pretrain_weights,
+                redownload=False,
                 validate=True
             )
-            
+
             if not checkpoint_available:
                 # Check if it's a custom path (not in HOSTED_MODELS)
                 from rfdetr.training.checkpoint import HOSTED_MODELS
@@ -115,8 +116,8 @@ class Model:
                         f"Attempting to re-download..."
                     )
                     checkpoint_available = download_pretrain_weights(
-                        args.pretrain_weights, 
-                        redownload=True, 
+                        args.pretrain_weights,
+                        redownload=True,
                         validate=True
                     )
                     if not checkpoint_available:
@@ -128,10 +129,10 @@ class Model:
                             f"  - Server-side issues\n"
                             f"Please check your internet connection and try again, or manually download the checkpoint."
                         )
-            
+
             # Step 2: Load checkpoint using the training module function
             checkpoint = load_pretrain_checkpoint(args.pretrain_weights, self.model, args, logger)
-            
+
             # Extract class_names from checkpoint if available
             if 'args' in checkpoint and hasattr(checkpoint['args'], 'class_names'):
                 self.args.class_names = checkpoint['args'].class_names
@@ -153,7 +154,7 @@ class Model:
         self.model = self.model.to(self.device)
         self.postprocess = PostProcess(num_select=args.num_select)
         self.stop_early = False
-    
+
     def reinitialize_detection_head(self, num_classes):
         self.model.reinitialize_detection_head(num_classes)
 
@@ -161,7 +162,7 @@ class Model:
         self.stop_early = True
         print("Early stopping requested, will complete current epoch and stop")
 
-    def train(self, callbacks: DefaultDict[str, List[Callable]], **kwargs):
+    def train(self, callbacks: defaultdict[str, list[Callable]], **kwargs):
         currently_supported_callbacks = ["on_fit_epoch_end", "on_train_batch_start", "on_train_end"]
         for key in callbacks.keys():
             if key not in currently_supported_callbacks:
@@ -170,15 +171,15 @@ class Model:
                     f"Currently supported callbacks: {currently_supported_callbacks}"
                 )
         args = populate_args(**kwargs)
-        if getattr(args, 'class_names') is not None:
+        if args.class_names is not None:
             self.args.class_names = args.class_names
             self.args.num_classes = args.num_classes
 
         utils.init_distributed_mode(args)
-        print("git:\n  {}\n".format(utils.get_sha()))
+        print(f"git:\n  {utils.get_sha()}\n")
         print(args)
         device = torch.device(args.device)
-        
+
         # fix the seed for reproducibility
         seed = args.seed + utils.get_rank()
         torch.manual_seed(seed)
@@ -202,7 +203,7 @@ class Model:
 
         param_dicts = [p for p in param_dicts if p['params'].requires_grad]
 
-        optimizer = torch.optim.AdamW(param_dicts, lr=args.lr, 
+        optimizer = torch.optim.AdamW(param_dicts, lr=args.lr,
                                     weight_decay=args.weight_decay)
         # Choose the learning rate scheduler based on the new argument
 
@@ -244,17 +245,17 @@ class Model:
             batch_sampler_train = torch.utils.data.BatchSampler(
                 sampler_train, effective_batch_size, drop_last=True)
             data_loader_train = DataLoader(
-                dataset_train, 
+                dataset_train,
                 batch_sampler=batch_sampler_train,
-                collate_fn=utils.collate_fn, 
+                collate_fn=utils.collate_fn,
                 num_workers=args.num_workers
             )
-        
+
         data_loader_val = DataLoader(dataset_val, args.batch_size, sampler=sampler_val,
-                                    drop_last=False, collate_fn=utils.collate_fn, 
+                                    drop_last=False, collate_fn=utils.collate_fn,
                                     num_workers=args.num_workers)
         data_loader_test = DataLoader(dataset_test, args.batch_size, sampler=sampler_test,
-                                    drop_last=False, collate_fn=utils.collate_fn, 
+                                    drop_last=False, collate_fn=utils.collate_fn,
                                     num_workers=args.num_workers)
 
         base_ds = get_coco_api_from_dataset(dataset_val)
@@ -266,7 +267,7 @@ class Model:
 
 
         output_dir = Path(args.output_dir)
-        
+
         if  utils.is_main_process():
             print("Get benchmark")
             if args.do_benchmark:
@@ -274,7 +275,7 @@ class Model:
                 bm = benchmark(benchmark_model.float(), dataset_val, output_dir)
                 print(json.dumps(bm, indent=2))
                 del benchmark_model
-        
+
         if args.resume:
             self.ema_m = load_resume_checkpoint(
                 args.resume, model_without_ddp, self.ema_m, optimizer, lr_scheduler, args, logger
@@ -289,7 +290,7 @@ class Model:
                 else:
                     utils.save_on_master(coco_evaluator.coco_eval["segm"].eval, output_dir / "eval.pth")
             return
-        
+
         # for drop
         total_batch_size = effective_batch_size * utils.get_world_size()
         num_training_steps_per_epoch = (len(dataset_train) + total_batch_size - 1) // total_batch_size
@@ -298,13 +299,13 @@ class Model:
             schedules['do'] = drop_scheduler(
                 args.dropout, args.epochs, num_training_steps_per_epoch,
                 args.cutoff_epoch, args.drop_mode, args.drop_schedule)
-            print("Min DO = %.7f, Max DO = %.7f" % (min(schedules['do']), max(schedules['do'])))
+            print("Min DO = {:.7f}, Max DO = {:.7f}".format(min(schedules['do']), max(schedules['do'])))
 
         if args.drop_path > 0:
             schedules['dp'] = drop_scheduler(
                 args.drop_path, args.epochs, num_training_steps_per_epoch,
                 args.cutoff_epoch, args.drop_mode, args.drop_schedule)
-            print("Min DP = %.7f, Max DP = %.7f" % (min(schedules['dp']), max(schedules['dp'])))
+            print("Min DP = {:.7f}, Max DP = {:.7f}".format(min(schedules['dp']), max(schedules['dp'])))
         print("Start training")
         start_time = time.time()
         best_map_holder = BestMetricHolder(use_ema=args.use_ema)
@@ -321,7 +322,7 @@ class Model:
             criterion.train()
             train_stats = train_one_epoch(
                 model, criterion, lr_scheduler, data_loader_train, optimizer, device, epoch,
-                effective_batch_size, args.clip_max_norm, ema_m=self.ema_m, schedules=schedules, 
+                effective_batch_size, args.clip_max_norm, ema_m=self.ema_m, schedules=schedules,
                 num_training_steps_per_epoch=num_training_steps_per_epoch,
                 vit_encoder_num_layers=args.vit_encoder_num_layers, args=args, callbacks=callbacks)
             train_epoch_time = time.time() - epoch_start_time
@@ -346,7 +347,7 @@ class Model:
                     if not args.dont_save_weights:
                         # create checkpoint dir
                         checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-                        
+
                         utils.save_on_master(weights, checkpoint_path)
 
             with torch.inference_mode():
@@ -411,7 +412,7 @@ class Model:
                             'args': args,
                         }, checkpoint_path)
             log_stats.update(best_map_holder.summary())
-            
+
             # epoch parameters
             ep_paras = {
                     'epoch': epoch,
@@ -445,7 +446,7 @@ class Model:
                                 torch.save(coco_evaluator.coco_eval["segm"].eval,
                                     output_dir / "eval" / name)
 
-            
+
             for callback in callbacks["on_fit_epoch_end"]:
                 callback(log_stats)
 
@@ -454,15 +455,15 @@ class Model:
                 break
 
         best_is_ema = best_map_ema_5095 > best_map_5095
-        
+
         if utils.is_main_process():
             if best_is_ema:
                 shutil.copy2(output_dir / 'checkpoint_best_ema.pth', output_dir / 'checkpoint_best_total.pth')
             else:
                 shutil.copy2(output_dir / 'checkpoint_best_regular.pth', output_dir / 'checkpoint_best_total.pth')
-            
+
             utils.strip_checkpoint(output_dir / 'checkpoint_best_total.pth')
-        
+
             best_map_5095 = max(best_map_5095, best_map_ema_5095)
             if best_is_ema:
                 results = ema_test_stats["results_json"]
@@ -476,10 +477,10 @@ class Model:
 
             total_time = time.time() - start_time
             total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-            print('Training time {}'.format(total_time_str))
+            print(f'Training time {total_time_str}')
             print('Results saved to {}'.format(output_dir / "results.json"))
-            
-        
+
+
         if best_is_ema:
             self.model = self.ema_m.module
         self.model.eval()
@@ -493,7 +494,7 @@ class Model:
                 model, criterion, postprocess, data_loader_test, base_ds_test, device, args=args
             )
             print(f"Test results: {test_stats}")
-            with open(output_dir / "results.json", "r") as f:
+            with open(output_dir / "results.json") as f:
                 results = json.load(f)
             test_metrics = test_stats["results_json"]["class_map"]
             results["class_map"]["test"] = test_metrics
@@ -502,12 +503,12 @@ class Model:
 
         for callback in callbacks["on_train_end"]:
             callback()
-    
+
     def export(self, output_dir="output", infer_dir=None, simplify=False,  backbone_only=False, opset_version=17, verbose=True, force=False, shape=None, batch_size=1, **kwargs):
         """Export the trained model to ONNX format"""
         print("Exporting model to ONNX format")
         try:
-            from rfdetr.deploy.export import export_onnx, onnx_simplify, make_infer_image
+            from rfdetr.deploy.export import export_onnx, make_infer_image, onnx_simplify
         except ImportError:
             print("It seems some dependencies for ONNX export are missing. Please run `pip install rfdetr[onnxexport]` and try again.")
             raise
@@ -560,7 +561,7 @@ class Model:
             verbose=verbose,
             opset_version=opset_version
         )
-        
+
         print(f"Successfully exported ONNX model to: {output_file}")
 
         if simplify:
@@ -571,10 +572,10 @@ class Model:
                 force=force
             )
             print(f"Successfully simplified ONNX model to: {sim_output_file}")
-        
+
         print("ONNX export completed successfully")
         self.model = self.model.to(device)
-            
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('LWDETR training and evaluation script', parents=[get_args_parser()])
@@ -582,11 +583,11 @@ if __name__ == '__main__':
 
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
-    
+
     config = vars(args)  # Convert Namespace to dictionary
-    
+
     if args.subcommand == 'distill':
-        distill(**config)   
+        distill(**config)
     elif args.subcommand is None:
         main(**config)
     elif args.subcommand == 'export_model':
@@ -652,7 +653,7 @@ if __name__ == '__main__':
         ]
         for key in filter_keys:
             config.pop(key, None)  # Use pop with None to avoid KeyError
-            
+
         from deploy.export import main as export_main
         if args.batch_size != 1:
             config['batch_size'] = 1

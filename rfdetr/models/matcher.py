@@ -21,12 +21,12 @@ Modules to compute the matching cost and solve the corresponding LSAP.
 """
 import numpy as np
 import torch
+import torch.nn.functional as F
 from scipy.optimize import linear_sum_assignment
 from torch import nn
-import torch.nn.functional as F
 
-from rfdetr.util.box_ops import box_cxcywh_to_xyxy, generalized_box_iou, batch_sigmoid_ce_loss, batch_dice_loss
 from rfdetr.models.segmentation_head import point_sample
+from rfdetr.util.box_ops import batch_dice_loss, batch_sigmoid_ce_loss, box_cxcywh_to_xyxy, generalized_box_iou
 
 
 class HungarianMatcher(nn.Module):
@@ -98,7 +98,7 @@ class HungarianMatcher(nn.Module):
         # Compute the classification cost.
         alpha = 0.25
         gamma = 2.0
-        
+
         # neg_cost_class = (1 - alpha) * (out_prob ** gamma) * (-(1 - out_prob + 1e-8).log())
         # pos_cost_class = alpha * ((1 - out_prob) ** gamma) * (-(out_prob + 1e-8).log())
         # we refactor these with logsigmoid for numerical stability

@@ -18,14 +18,12 @@ Backbone modules.
 """
 import torch
 import torch.nn.functional as F
-
 from peft import PeftModel
 
-from rfdetr.util.misc import NestedTensor
-
 from rfdetr.models.backbone.base import BackboneBase
-from rfdetr.models.backbone.projector import MultiScaleProjector
 from rfdetr.models.backbone.dinov2 import DinoV2
+from rfdetr.models.backbone.projector import MultiScaleProjector
+from rfdetr.util.misc import NestedTensor
 
 __all__ = ["Backbone"]
 
@@ -94,7 +92,7 @@ class Backbone(BackboneBase):
         assert (
             sorted(self.projector_scale) == self.projector_scale
         ), "only support projector scale P3/P4/P5/P6 in ascending order."
-        level2scalefactor = dict(P3=2.0, P4=1.0, P5=0.5, P6=0.25)
+        level2scalefactor = {"P3": 2.0, "P4": 1.0, "P5": 0.5, "P6": 0.25}
         scale_factors = [level2scalefactor[lvl] for lvl in self.projector_scale]
 
         self.projector = MultiScaleProjector(

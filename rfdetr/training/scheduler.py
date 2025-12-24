@@ -5,6 +5,7 @@
 # ------------------------------------------------------------------------
 
 import math
+
 import torch
 
 import rfdetr.util.misc as utils
@@ -13,12 +14,12 @@ import rfdetr.util.misc as utils
 def create_lr_scheduler(optimizer, args, dataset_train):
     """
     Create learning rate scheduler based on args configuration.
-    
+
     Args:
         optimizer: Optimizer instance
         args: Arguments namespace with lr_scheduler, warmup_epochs, epochs, lr_drop, lr_min_factor
         dataset_train: Training dataset for calculating steps per epoch
-        
+
     Returns:
         Learning rate scheduler
     """
@@ -27,7 +28,7 @@ def create_lr_scheduler(optimizer, args, dataset_train):
     num_training_steps_per_epoch_lr = (len(dataset_train) + total_batch_size_for_lr - 1) // total_batch_size_for_lr
     total_training_steps_lr = num_training_steps_per_epoch_lr * args.epochs
     warmup_steps_lr = num_training_steps_per_epoch_lr * args.warmup_epochs
-    
+
     def lr_lambda(current_step: int):
         if current_step < warmup_steps_lr:
             # Linear warmup
@@ -42,7 +43,7 @@ def create_lr_scheduler(optimizer, args, dataset_train):
                     return 1.0
                 else:
                     return 0.1
-    
+
     lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
     return lr_scheduler
 

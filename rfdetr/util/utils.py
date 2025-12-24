@@ -1,14 +1,15 @@
-from copy import deepcopy
-import torch
 import json
-from collections import OrderedDict
 import math
+from collections import OrderedDict
+from copy import deepcopy
+
+import torch
 
 
 class ModelEma(torch.nn.Module):
     """EMA Model"""
     def __init__(self, model, decay=0.9997, tau=0, device=None):
-        super(ModelEma, self).__init__()
+        super().__init__()
         # make a copy of the model for accumulating moving average of weights
         self.module = deepcopy(model)
         self.module.eval()
@@ -44,7 +45,7 @@ class ModelEma(torch.nn.Module):
         self._update(model, update_fn=lambda e, m: m)
 
 
-class BestMetricSingle():
+class BestMetricSingle:
     def __init__(self, init_res=0.0, better='large') -> None:
         self.init_res = init_res
         self.best_res = init_res
@@ -67,7 +68,7 @@ class BestMetricSingle():
         return False
 
     def __str__(self) -> str:
-        return "best_res: {}\t best_ep: {}".format(self.best_res, self.best_ep)
+        return f"best_res: {self.best_res}\t best_ep: {self.best_ep}"
 
     def __repr__(self) -> str:
         return self.__str__()
@@ -79,7 +80,7 @@ class BestMetricSingle():
         }
 
 
-class BestMetricHolder():
+class BestMetricHolder:
     def __init__(self, init_res=0.0, better='large', use_ema=False) -> None:
         self.best_all = BestMetricSingle(init_res, better)
         self.use_ema = use_ema

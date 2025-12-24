@@ -171,7 +171,7 @@ class MetricsTensorBoardSink:
                 self.writer.add_scalar("Metrics/Base/AP50", ap50, epoch)
             if ar50_90 is not None:
                 self.writer.add_scalar("Metrics/Base/AR50_90", ar50_90, epoch)
-        
+
         if 'test_f1' in values:
             self.writer.add_scalar("Metrics/Base/F1", values['test_f1'], epoch)
 
@@ -186,7 +186,7 @@ class MetricsTensorBoardSink:
                 self.writer.add_scalar("Metrics/EMA/AP50", ema_ap50, epoch)
             if ema_ar50_90 is not None:
                 self.writer.add_scalar("Metrics/EMA/AR50_90", ema_ar50_90, epoch)
-        
+
         if 'ema_test_f1' in values:
             self.writer.add_scalar("Metrics/EMA/F1", values['ema_test_f1'], epoch)
 
@@ -195,7 +195,7 @@ class MetricsTensorBoardSink:
     def close(self):
         if not self.writer:
             return
-        
+
         self.writer.close()
 
 class MetricsWandBSink:
@@ -246,7 +246,7 @@ class MetricsWandBSink:
                 log_dict["Metrics/Base/AP50"] = ap50
             if ar50_90 is not None:
                 log_dict["Metrics/Base/AR50_90"] = ar50_90
-        
+
         if 'test_f1' in values:
             log_dict["Metrics/Base/F1"] = values['test_f1']
 
@@ -261,7 +261,7 @@ class MetricsWandBSink:
                 log_dict["Metrics/EMA/AP50"] = ema_ap50
             if ema_ar50_90 is not None:
                 log_dict["Metrics/EMA/AR50_90"] = ema_ar50_90
-        
+
         if 'ema_test_f1' in values:
             log_dict["Metrics/EMA/F1"] = values['ema_test_f1']
 
@@ -270,5 +270,5 @@ class MetricsWandBSink:
     def close(self):
         if not wandb or not self.run:
             return
-            
+
         self.run.finish()

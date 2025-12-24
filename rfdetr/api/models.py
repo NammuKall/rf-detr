@@ -8,12 +8,12 @@ from rfdetr.api.base import RFDETR
 from rfdetr.config import (
     RFDETRBaseConfig,
     RFDETRLargeConfig,
-    RFDETRNanoConfig,
-    RFDETRSmallConfig,
     RFDETRMediumConfig,
+    RFDETRNanoConfig,
     RFDETRSegPreviewConfig,
-    TrainConfig,
+    RFDETRSmallConfig,
     SegmentationTrainConfig,
+    TrainConfig,
 )
 
 

@@ -15,15 +15,16 @@
 """
 Transformer class
 """
-import math
 import copy
+import math
 from typing import Optional
 
 import torch
 import torch.nn.functional as F
-from torch import nn, Tensor
+from torch import Tensor, nn
 
 from rfdetr.models.ops.modules import MSDeformAttn
+
 
 class MLP(nn.Module):
     """ Very simple multi-layer perceptron (also called FFN)"""
@@ -65,12 +66,12 @@ def gen_sineembed_for_position(pos_tensor, dim=128):
 
         pos = torch.cat((pos_y, pos_x, pos_w, pos_h), dim=2)
     else:
-        raise ValueError("Unknown pos_tensor shape(-1):{}".format(pos_tensor.size(-1)))
+        raise ValueError(f"Unknown pos_tensor shape(-1):{pos_tensor.size(-1)}")
     return pos
 
 
 def gen_encoder_output_proposals(memory, memory_padding_mask, spatial_shapes, unsigmoid=True):
-    """
+    r"""
     Input:
         - memory: bs, \sum{hw}, d_model
         - memory_padding_mask: bs, \sum{hw}
@@ -136,27 +137,27 @@ class TransformerEncoderLayer(nn.Module):
         # Self-attention using multi-scale deformable attention
         self.self_attn = MSDeformAttn(
             d_model, n_levels=num_feature_levels, n_heads=nhead, n_points=enc_n_points)
-        
+
         # Feed-forward network
         self.linear1 = nn.Linear(d_model, dim_feedforward)
         self.dropout = nn.Dropout(dropout)
         self.linear2 = nn.Linear(dim_feedforward, d_model)
-        
+
         # Normalization layers
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
-        
+
         # Dropout layers
         self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(dropout)
-        
+
         self.activation = _get_activation_fn(activation)
         self.d_model = d_model
         self.nhead = nhead
-        
-    def forward(self, src, pos, reference_points, spatial_shapes, level_start_index, 
+
+    def forward(self, src, pos, reference_points, spatial_shapes, level_start_index,
                 src_key_padding_mask=None):
-        """
+        r"""
         Args:
             src: (N, \sum{HW}, C) - flattened multi-scale features
             pos: (N, \sum{HW}, C) - positional embeddings
@@ -176,12 +177,12 @@ class TransformerEncoderLayer(nn.Module):
         )
         src = src + self.dropout1(src2)
         src = self.norm1(src)
-        
+
         # Feed-forward with residual connection
         src2 = self.linear2(self.dropout(self.activation(self.linear1(src))))
         src = src + self.dropout2(src2)
         src = self.norm2(src)
-        
+
         return src
 
 
@@ -192,18 +193,18 @@ class TransformerEncoder(nn.Module):
         self.layers = _get_clones(encoder_layer, num_layers)
         self.num_layers = num_layers
         self.norm = norm
-        
+
     def forward(self, src, pos, reference_points, spatial_shapes, level_start_index,
                 mask=None):
         output = src
-        
+
         for layer in self.layers:
-            output = layer(output, pos, reference_points, spatial_shapes, 
+            output = layer(output, pos, reference_points, spatial_shapes,
                          level_start_index, mask)
-        
+
         if self.norm is not None:
             output = self.norm(output)
-            
+
         return output
 
 
@@ -212,7 +213,7 @@ class Transformer(nn.Module):
     def __init__(self, d_model=512, sa_nhead=8, ca_nhead=8, num_queries=300,
                  num_decoder_layers=6, dim_feedforward=2048, dropout=0.0,
                  activation="relu", normalize_before=False,
-                 return_intermediate_dec=False, group_detr=1, 
+                 return_intermediate_dec=False, group_detr=1,
                  two_stage=False,
                  num_feature_levels=4, dec_n_points=4,
                  lite_refpoint_refine=False,
@@ -221,7 +222,7 @@ class Transformer(nn.Module):
                  num_encoder_layers=0,  # NEW: Number of encoder layers
                  enc_n_points=4):  # NEW: Sampling points for encoder
         super().__init__()
-        
+
         # NEW: Add encoder layers to refine backbone features
         self.num_encoder_layers = num_encoder_layers
         if num_encoder_layers > 0:
@@ -240,13 +241,13 @@ class Transformer(nn.Module):
             self.encoder = None
 
         decoder_layer = TransformerDecoderLayer(d_model, sa_nhead, ca_nhead, dim_feedforward,
-                                                dropout, activation, normalize_before, 
+                                                dropout, activation, normalize_before,
                                                 group_detr=group_detr,
                                                 num_feature_levels=num_feature_levels,
                                                 dec_n_points=dec_n_points,
                                                 skip_self_attn=False,)
         assert decoder_norm_type in ['LN', 'Identity']
-        norm = { 
+        norm = {
             "LN": lambda channels: nn.LayerNorm(channels),
             "Identity": lambda channels: nn.Identity(),
         }
@@ -257,8 +258,8 @@ class Transformer(nn.Module):
                                           d_model=d_model,
                                           lite_refpoint_refine=lite_refpoint_refine,
                                           bbox_reparam=bbox_reparam)
-        
-        
+
+
         self.two_stage = two_stage
         if two_stage:
             self.enc_output = nn.ModuleList([nn.Linear(d_model, d_model) for _ in range(group_detr)])
@@ -274,7 +275,7 @@ class Transformer(nn.Module):
         self.bbox_reparam = bbox_reparam
 
         self._export = False
-    
+
     def export(self):
         self._export = True
 
@@ -285,7 +286,7 @@ class Transformer(nn.Module):
         for m in self.modules():
             if isinstance(m, MSDeformAttn):
                 m._reset_parameters()
-    
+
     def get_valid_ratio(self, mask):
         _, H, W = mask.shape
         valid_H = torch.sum(~mask[:, :, 0], 1)
@@ -313,19 +314,19 @@ class Transformer(nn.Module):
             if masks is not None:
                 mask = masks[lvl].flatten(1)                    # bs, hw
                 mask_flatten.append(mask)
-        memory = torch.cat(src_flatten, 1)    # bs, \sum{hxw}, c 
+        memory = torch.cat(src_flatten, 1)    # bs, \sum{hxw}, c
         if masks is not None:
             mask_flatten = torch.cat(mask_flatten, 1)   # bs, \sum{hxw}
             valid_ratios = torch.stack([self.get_valid_ratio(m) for m in masks], 1)
-        lvl_pos_embed_flatten = torch.cat(lvl_pos_embed_flatten, 1) # bs, \sum{hxw}, c 
+        lvl_pos_embed_flatten = torch.cat(lvl_pos_embed_flatten, 1) # bs, \sum{hxw}, c
         spatial_shapes = torch.as_tensor(spatial_shapes, dtype=torch.long, device=memory.device)
         level_start_index = torch.cat((spatial_shapes.new_zeros((1, )), spatial_shapes.prod(1).cumsum(0)[:-1]))
-        
+
         # NEW: Generate reference points for encoder (center of each feature location)
         if self.encoder is not None:
             # Create reference points for encoder: center of each spatial location
             reference_points_enc = []
-            for lvl, (h, w) in enumerate(spatial_shapes):
+            for _lvl, (h, w) in enumerate(spatial_shapes):
                 # Create grid of reference points in [0, 1] range
                 y = torch.arange(h, dtype=torch.float32, device=memory.device)
                 x = torch.arange(w, dtype=torch.float32, device=memory.device)
@@ -339,7 +340,7 @@ class Transformer(nn.Module):
                 ref_points = ref_points.unsqueeze(2).repeat(1, 1, len(spatial_shapes), 1)
                 reference_points_enc.append(ref_points)
             reference_points_enc = torch.cat(reference_points_enc, dim=1)  # (bs, \sum{HW}, num_levels, 2)
-            
+
             # Apply encoder layers to refine features
             memory = self.encoder(
                 memory,
@@ -349,7 +350,7 @@ class Transformer(nn.Module):
                 level_start_index,
                 mask_flatten
             )
-        
+
         if self.two_stage:
             output_memory, output_proposals = gen_encoder_output_proposals(
                 memory, mask_flatten, spatial_shapes, unsigmoid=not self.bbox_reparam)
@@ -358,7 +359,7 @@ class Transformer(nn.Module):
             group_detr = self.group_detr if self.training else 1
             for g_idx in range(group_detr):
                 output_memory_gidx = self.enc_output_norm[g_idx](self.enc_output[g_idx](output_memory))
-    
+
                 enc_outputs_class_unselected_gidx = self.enc_out_class_embed[g_idx](output_memory_gidx)
                 if self.bbox_reparam:
                     enc_outputs_coord_delta_gidx = self.enc_out_bbox_embed[g_idx](output_memory_gidx)
@@ -373,16 +374,16 @@ class Transformer(nn.Module):
 
                 topk = min(self.num_queries, enc_outputs_class_unselected_gidx.shape[-2])
                 topk_proposals_gidx = torch.topk(enc_outputs_class_unselected_gidx.max(-1)[0], topk, dim=1)[1] # bs, nq
-                
+
                 refpoint_embed_gidx_undetach = torch.gather(
                     enc_outputs_coord_unselected_gidx, 1, topk_proposals_gidx.unsqueeze(-1).repeat(1, 1, 4)) # unsigmoid
                 # for decoder layer, detached as initial ones, (bs, nq, 4)
                 refpoint_embed_gidx = refpoint_embed_gidx_undetach.detach()
-                
+
                 # get memory tgt
                 tgt_undetach_gidx = torch.gather(
                     output_memory_gidx, 1, topk_proposals_gidx.unsqueeze(-1).repeat(1, 1, self.d_model))
-                
+
                 refpoint_embed_ts.append(refpoint_embed_gidx)
                 memory_ts.append(tgt_undetach_gidx)
                 boxes_ts.append(refpoint_embed_gidx_undetach)
@@ -391,7 +392,7 @@ class Transformer(nn.Module):
             # (bs, nq, d)
             memory_ts = torch.cat(memory_ts, dim=1)#.transpose(0, 1)
             boxes_ts = torch.cat(boxes_ts, dim=1)#.transpose(0, 1)
-        
+
         if self.dec_layers > 0:
             tgt = query_feat.unsqueeze(0).repeat(bs, 1, 1)
             refpoint_embed = refpoint_embed.unsqueeze(0).repeat(bs, 1, 1)
@@ -409,20 +410,20 @@ class Transformer(nn.Module):
                     )
                 else:
                     refpoint_embed_ts_subset = refpoint_embed_ts_subset + refpoint_embed_ts
-                
+
                 refpoint_embed = torch.concat(
                     [refpoint_embed_ts_subset, refpoint_embed_subset], dim=-2)
 
             hs, references = self.decoder(tgt, memory, memory_key_padding_mask=mask_flatten,
                             pos=lvl_pos_embed_flatten, refpoints_unsigmoid=refpoint_embed,
-                            level_start_index=level_start_index, 
+                            level_start_index=level_start_index,
                             spatial_shapes=spatial_shapes,
                             valid_ratios=valid_ratios.to(memory.dtype) if valid_ratios is not None else valid_ratios)
         else:
             assert self.two_stage, "if not using decoder, two_stage must be True"
             hs = None
             references = None
-        
+
         if self.two_stage:
             if self.bbox_reparam:
                 return hs, references, memory_ts, boxes_ts
@@ -436,7 +437,7 @@ class TransformerDecoder(nn.Module):
     def __init__(self,
                  decoder_layer,
                  num_layers,
-                 norm=None, 
+                 norm=None,
                  return_intermediate=False,
                  d_model=256,
                  lite_refpoint_refine=False,
@@ -453,7 +454,7 @@ class TransformerDecoder(nn.Module):
         self.ref_point_head = MLP(2 * d_model, d_model, d_model, 2)
 
         self._export = False
-    
+
     def export(self):
         self._export = True
 
@@ -483,22 +484,22 @@ class TransformerDecoder(nn.Module):
 
         intermediate = []
         hs_refpoints_unsigmoid = [refpoints_unsigmoid]
-        
+
         def get_reference(refpoints):
             # [num_queries, batch_size, 4]
             obj_center = refpoints[..., :4]
-            
+
             if self._export:
-                query_sine_embed = gen_sineembed_for_position(obj_center, self.d_model / 2) # bs, nq, 256*2 
+                query_sine_embed = gen_sineembed_for_position(obj_center, self.d_model / 2) # bs, nq, 256*2
                 refpoints_input = obj_center[:, :, None] # bs, nq, 1, 4
             else:
                 refpoints_input = obj_center[:, :, None] \
                                         * torch.cat([valid_ratios, valid_ratios], -1)[:, None] # bs, nq, nlevel, 4
                 query_sine_embed = gen_sineembed_for_position(
-                    refpoints_input[:, :, 0, :], self.d_model / 2) # bs, nq, 256*2 
+                    refpoints_input[:, :, 0, :], self.d_model / 2) # bs, nq, 256*2
             query_pos = self.ref_point_head(query_sine_embed)
             return obj_center, refpoints_input, query_pos, query_sine_embed
-        
+
         # always use init refpoints
         if self.lite_refpoint_refine:
             if self.bbox_reparam:
@@ -518,12 +519,12 @@ class TransformerDecoder(nn.Module):
             pos_transformation = 1
 
             query_pos = query_pos * pos_transformation
-            
+
             output = layer(output, memory, tgt_mask=tgt_mask,
                            memory_mask=memory_mask,
                            tgt_key_padding_mask=tgt_key_padding_mask,
                            memory_key_padding_mask=memory_key_padding_mask,
-                           pos=pos, query_pos=query_pos, query_sine_embed=query_sine_embed, 
+                           pos=pos, query_pos=query_pos, query_sine_embed=query_sine_embed,
                            is_first=(layer_id == 0),
                            reference_points=refpoints_input,
                            spatial_shapes=spatial_shapes,
@@ -563,7 +564,7 @@ class TransformerDecoder(nn.Module):
                 ]
             else:
                 return [
-                    torch.stack(intermediate), 
+                    torch.stack(intermediate),
                     refpoints_unsigmoid.unsqueeze(0)
                 ]
 
@@ -573,8 +574,8 @@ class TransformerDecoder(nn.Module):
 class TransformerDecoderLayer(nn.Module):
 
     def __init__(self, d_model, sa_nhead, ca_nhead, dim_feedforward=2048, dropout=0.1,
-                 activation="relu", normalize_before=False, group_detr=1, 
-                 num_feature_levels=4, dec_n_points=4, 
+                 activation="relu", normalize_before=False, group_detr=1,
+                 num_feature_levels=4, dec_n_points=4,
                  skip_self_attn=False):
         super().__init__()
         # Decoder Self-Attention
@@ -595,7 +596,7 @@ class TransformerDecoderLayer(nn.Module):
 
         self.norm2 = nn.LayerNorm(d_model)
         self.norm3 = nn.LayerNorm(d_model)
-        
+
         self.dropout2 = nn.Dropout(dropout)
         self.dropout3 = nn.Dropout(dropout)
 
@@ -620,7 +621,7 @@ class TransformerDecoderLayer(nn.Module):
                      level_start_index=None,
                      ):
         bs, num_queries, _ = tgt.shape
-        
+
         # ========== Begin of Self-Attention =============
         # Apply projections here
         # shape: batch_size x num_queries x 256
@@ -634,7 +635,7 @@ class TransformerDecoderLayer(nn.Module):
         tgt2 = self.self_attn(q, k, v, attn_mask=tgt_mask,
                             key_padding_mask=tgt_key_padding_mask,
                             need_weights=False)[0]
-        
+
         if self.training:
             tgt2 = torch.cat(tgt2.split(bs, dim=0), dim=1)
         # ========== End of Self-Attention =============
@@ -673,7 +674,7 @@ class TransformerDecoderLayer(nn.Module):
                 spatial_shapes=None,
                 level_start_index=None):
         return self.forward_post(tgt, memory, tgt_mask, memory_mask,
-                                 tgt_key_padding_mask, memory_key_padding_mask, pos, query_pos, 
+                                 tgt_key_padding_mask, memory_key_padding_mask, pos, query_pos,
                                  query_sine_embed, is_first,
                                  reference_points, spatial_shapes, level_start_index)
 
@@ -683,9 +684,9 @@ def _get_clones(module, N):
 
 
 def build_transformer(args):
-    
+
     two_stage = getattr(args, 'two_stage', False)
-    
+
     # NEW: Get encoder parameters (default to 0 if not specified)
     num_encoder_layers = getattr(args, 'num_encoder_layers', 0)
     enc_n_points = getattr(args, 'enc_n_points', 4)  # Default to 4 points like decoder

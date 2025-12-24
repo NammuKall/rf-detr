@@ -8,8 +8,7 @@ import json
 import os
 from collections import defaultdict
 from logging import getLogger
-from typing import Union, List
-
+from typing import Union
 
 import numpy as np
 import supervision as sv
@@ -20,8 +19,8 @@ from PIL import Image
 from rfdetr.config import ModelConfig, TrainConfig
 from rfdetr.main import Model
 from rfdetr.training import download_pretrain_weights
-from rfdetr.util.metrics import MetricsPlotSink, MetricsTensorBoardSink, MetricsWandBSink
 from rfdetr.util.coco_classes import COCO_CLASSES
+from rfdetr.util.metrics import MetricsPlotSink, MetricsTensorBoardSink, MetricsWandBSink
 
 logger = getLogger(__name__)
 
@@ -29,21 +28,21 @@ logger = getLogger(__name__)
 def _validate_model_dump_result(result, config_name: str, config_type: str) -> dict:
     """
     Validate that model_dump() returns a dictionary and provide informative error messages.
-    
+
     This function provides detailed error messages if model_dump() returns an unexpected type,
     which should never happen with Pydantic v2 but could indicate:
     - Pydantic version incompatibility
     - Config object corruption
     - Unexpected override of model_dump() method
-    
+
     Args:
         result: The result from calling model_dump() on a Pydantic model
         config_name: A descriptive name for the config (e.g., "train_config", "model_config")
         config_type: The type/class name of the config object (e.g., "TrainConfig", "ModelConfig")
-    
+
     Returns:
         dict: The validated dictionary result from model_dump()
-    
+
     Raises:
         TypeError: If model_dump() returns a non-dict type, with detailed diagnostic information
     """
@@ -54,7 +53,7 @@ def _validate_model_dump_result(result, config_name: str, config_type: str) -> d
             pydantic_version = pydantic.__version__
         except (ImportError, AttributeError):
             pydantic_version = "unknown"
-        
+
         # Log detailed diagnostic information before raising
         logger.error(
             f"CRITICAL: model_dump() returned unexpected type for {config_name}.\n"
@@ -73,7 +72,7 @@ def _validate_model_dump_result(result, config_name: str, config_type: str) -> d
             f"    3. Inspect config object state: {config_name}.__dict__\n"
             f"    4. Try recreating config object from scratch"
         )
-        
+
         raise TypeError(
             f"model_dump() returned unexpected type for {config_name} (type: {config_type}).\n"
             f"Expected dict, but got {type(result).__name__}.\n\n"
@@ -101,7 +100,7 @@ def _validate_model_dump_result(result, config_name: str, config_type: str) -> d
             f"  4. Check result structure: print(result.keys())\n"
             f"  5. If issues persist, check Pydantic documentation for your version"
         )
-    
+
     return result
 
 
@@ -132,10 +131,10 @@ class RFDETR:
     def maybe_download_pretrain_weights(self):
         """
         Download pre-trained weights if they are not already downloaded.
-        
+
         This method ensures the checkpoint exists and is valid before model initialization.
         Handles None cases gracefully and validates checkpoints before use.
-        
+
         Behavior:
         - If pretrain_weights is None: Logs info and continues (model will train from scratch)
         - If pretrain_weights is provided: Downloads/validates checkpoint before model initialization
@@ -147,7 +146,7 @@ class RFDETR:
                 "(backbone weights may still be loaded from pretrained encoder if specified)."
             )
             return
-        
+
         # Validate that pretrain_weights is a string (not empty or wrong type)
         if not isinstance(self.model_config.pretrain_weights, str):
             logger.error(
@@ -157,14 +156,14 @@ class RFDETR:
             raise TypeError(
                 f"pretrain_weights must be a string or None, got {type(self.model_config.pretrain_weights).__name__}"
             )
-        
+
         if not self.model_config.pretrain_weights.strip():
             logger.error("pretrain_weights is an empty string. Use None if no pretrained weights are needed.")
             raise ValueError("pretrain_weights cannot be an empty string. Use None if no pretrained weights are needed.")
-        
+
         pretrain_path = self.model_config.pretrain_weights.strip()
         logger.info(f"Preparing pretrain weights: {pretrain_path}")
-        
+
         # Attempt to download and validate checkpoint
         try:
             success = download_pretrain_weights(
@@ -172,7 +171,7 @@ class RFDETR:
                 redownload=False,
                 validate=True
             )
-            
+
             if success:
                 logger.info(
                     f"Pretrain weights ready: {pretrain_path}\n"
@@ -221,7 +220,7 @@ class RFDETR:
     def train_from_config(self, config: TrainConfig, **kwargs):
         if config.dataset_file == "roboflow":
             with open(
-                os.path.join(config.dataset_dir, "train", "_annotations.coco.json"), "r"
+                os.path.join(config.dataset_dir, "train", "_annotations.coco.json")
             ) as f:
                 anns = json.load(f)
                 num_classes = len(anns["categories"])
@@ -230,7 +229,7 @@ class RFDETR:
         elif config.dataset_file == "simsurg":
             # SimSurg uses COCO format with annotations in a separate folder
             with open(
-                os.path.join(config.dataset_dir, "annotations", "instances_train.json"), "r"
+                os.path.join(config.dataset_dir, "annotations", "instances_train.json")
             ) as f:
                 anns = json.load(f)
                 num_classes = len(anns["categories"])
@@ -244,32 +243,32 @@ class RFDETR:
 
         if self.model_config.num_classes != num_classes:
             self.model.reinitialize_detection_head(num_classes)
-        
+
         train_config = _validate_model_dump_result(
             config.model_dump(),
             config_name="train_config",
             config_type=config.__class__.__name__
         )
-        
+
         model_config = _validate_model_dump_result(
             self.model_config.model_dump(),
             config_name="model_config",
             config_type=self.model_config.__class__.__name__
         )
-        
+
         model_config.pop("num_classes")
         if "class_names" in model_config:
             model_config.pop("class_names")
-        
+
         if "class_names" in train_config and train_config["class_names"] is None:
             train_config["class_names"] = class_names
 
-        for k, v in train_config.items():
+        for k, _v in train_config.items():
             if k in model_config:
                 model_config.pop(k)
             if k in kwargs:
                 kwargs.pop(k)
-        
+
         all_kwargs = {**model_config, **train_config, **kwargs, "num_classes": num_classes}
 
         metrics_plot_sink = MetricsPlotSink(output_dir=config.output_dir)
@@ -328,7 +327,7 @@ class RFDETR:
             config_type=config.__class__.__name__
         )
         return Model(**config_dict)
-    
+
     # Get class_names from the model
     @property
     def class_names(self):
@@ -340,7 +339,7 @@ class RFDETR:
         """
         if hasattr(self.model, 'class_names') and self.model.class_names:
             return {i+1: name for i, name in enumerate(self.model.class_names)}
-            
+
         return COCO_CLASSES
 
     def optimize_for_inference(self, compile=True, batch_size=1, dtype=torch.float32):
@@ -362,14 +361,14 @@ class RFDETR:
             self.model.inference_model = torch.jit.trace(
                 self.model.inference_model,
                 torch.randn(
-                    batch_size, 3, self.model.resolution, self.model.resolution, 
+                    batch_size, 3, self.model.resolution, self.model.resolution,
                     device=self.model.device,
                     dtype=dtype
                 )
             )
             self._optimized_has_been_compiled = True
             self._optimized_batch_size = batch_size
-    
+
     def remove_optimized_model(self):
         """Remove the optimized inference model."""
         self.model.inference_model = None
@@ -381,12 +380,12 @@ class RFDETR:
 
     def predict(
         self,
-        images: Union[str, Image.Image, np.ndarray, torch.Tensor, List[Union[str, np.ndarray, Image.Image, torch.Tensor]]],
+        images: Union[str, Image.Image, np.ndarray, torch.Tensor, list[Union[str, np.ndarray, Image.Image, torch.Tensor]]],
         threshold: float = 0.5,
         **kwargs,
-    ) -> Union[sv.Detections, List[sv.Detections]]:
+    ) -> Union[sv.Detections, list[sv.Detections]]:
         """Performs object detection on the input images and returns bounding box predictions."""
-        
+
         if not self._is_optimized_for_inference and not self._has_warned_about_not_being_optimized_for_inference:
             logger.warning(
                 "Model is not optimized for inference. "
@@ -408,7 +407,7 @@ class RFDETR:
 
             if not isinstance(img, torch.Tensor):
                 img = F.to_tensor(img)
-            
+
             if (img > 1).any():
                 raise ValueError(
                     "Image has pixel values above 1. Please ensure the image is "
@@ -420,7 +419,7 @@ class RFDETR:
                     f"{img.shape[0]} channels."
                 )
             img_tensor = img
-            
+
             h, w = img_tensor.shape[1:]
             orig_sizes.append((h, w))
 
@@ -493,14 +492,14 @@ class RFDETR:
             detections_list.append(detections)
 
         return detections_list if len(detections_list) > 1 else detections_list[0]
-    
+
     def deploy_to_roboflow(self, workspace: str, project_id: str, version: str, api_key: str = None, size: str = None):
         """Deploy the trained RF-DETR model to Roboflow."""
         import os
         import shutil
-        
+
         from roboflow import Roboflow
-        
+
         if api_key is None:
             api_key = os.getenv("ROBOFLOW_API_KEY")
             if api_key is None:

@@ -4,8 +4,9 @@
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]
 # ------------------------------------------------------------------------
 
+from typing import Literal, Optional
+
 from pydantic import BaseModel
-from typing import List, Optional, Literal
 
 
 class TrainConfig(BaseModel):
@@ -44,7 +45,7 @@ class TrainConfig(BaseModel):
     wandb: bool = False
     project: Optional[str] = None
     run: Optional[str] = None
-    class_names: List[str] = None
+    class_names: list[str] = None
     run_test: bool = True
     segmentation_head: bool = False
 

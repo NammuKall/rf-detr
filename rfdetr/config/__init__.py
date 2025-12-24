@@ -9,12 +9,12 @@ from rfdetr.config.base import ModelConfig
 from rfdetr.config.models import (
     RFDETRBaseConfig,
     RFDETRLargeConfig,
-    RFDETRNanoConfig,
-    RFDETRSmallConfig,
     RFDETRMediumConfig,
+    RFDETRNanoConfig,
     RFDETRSegPreviewConfig,
+    RFDETRSmallConfig,
 )
-from rfdetr.config.training import TrainConfig, SegmentationTrainConfig
+from rfdetr.config.training import SegmentationTrainConfig, TrainConfig
 
 __all__ = [
     "ModelConfig",

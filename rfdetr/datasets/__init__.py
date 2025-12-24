@@ -14,8 +14,8 @@ import torch.utils.data
 import torchvision
 
 from .coco import build as build_coco
-from .o365 import build_o365
 from .coco import build_roboflow
+from .o365 import build_o365
 from .simsurg import build_simsurg
 
 

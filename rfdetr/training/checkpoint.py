@@ -5,10 +5,11 @@
 # ------------------------------------------------------------------------
 
 import os
-import torch
 from logging import getLogger
 
-from rfdetr.util.checkpoint import download_file, validate_checkpoint, download_resume_checkpoint
+import torch
+
+from rfdetr.util.checkpoint import download_file, download_resume_checkpoint, validate_checkpoint
 from rfdetr.util.utils import clean_state_dict
 
 logger = getLogger(__name__)
@@ -29,28 +30,28 @@ HOSTED_MODELS = {
 def download_pretrain_weights(pretrain_weights: str, redownload=False, validate=True) -> bool:
     """
     Download pretrained weights if needed and validate the checkpoint.
-    
+
     Args:
         pretrain_weights: Path to checkpoint file (can be filename or full path)
         redownload: Force re-download even if file exists
         validate: Validate checkpoint structure after download
-        
+
     Returns:
         True if checkpoint exists and is valid, False otherwise
     """
     if pretrain_weights is None:
         return False
-    
+
     # Resolve path to absolute path for consistent handling
     if os.path.isabs(pretrain_weights):
         checkpoint_path = pretrain_weights
     else:
         # Relative path - resolve relative to current working directory
         checkpoint_path = os.path.abspath(pretrain_weights)
-    
+
     # Check if checkpoint is in HOSTED_MODELS (downloadable)
     is_hosted = pretrain_weights in HOSTED_MODELS or os.path.basename(pretrain_weights) in HOSTED_MODELS
-    
+
     # If not hosted and file doesn't exist, can't download
     if not is_hosted:
         if os.path.exists(checkpoint_path):
@@ -67,10 +68,10 @@ def download_pretrain_weights(pretrain_weights: str, redownload=False, validate=
                 f"Available hosted models: {list(HOSTED_MODELS.keys())}"
             )
             return False
-    
+
     # Determine the model name for HOSTED_MODELS lookup
     model_name = pretrain_weights if pretrain_weights in HOSTED_MODELS else os.path.basename(pretrain_weights)
-    
+
     # Check if file already exists and is valid
     if os.path.exists(checkpoint_path) and not redownload:
         if validate:
@@ -91,11 +92,11 @@ def download_pretrain_weights(pretrain_weights: str, redownload=False, validate=
         else:
             logger.info(f"Checkpoint already exists: {checkpoint_path}")
             return True
-    
+
     # Download the checkpoint
     url = HOSTED_MODELS[model_name]
     logger.info(f"Downloading pretrained weights: {model_name} from {url}")
-    
+
     # Ensure directory exists
     checkpoint_dir = os.path.dirname(checkpoint_path)
     if checkpoint_dir and not os.path.exists(checkpoint_dir):
@@ -104,14 +105,14 @@ def download_pretrain_weights(pretrain_weights: str, redownload=False, validate=
         except Exception as e:
             logger.error(f"Failed to create checkpoint directory {checkpoint_dir}: {e}")
             return False
-    
+
     # Download file
     download_success = download_file(url, checkpoint_path)
-    
+
     if not download_success:
         logger.error(f"Failed to download checkpoint: {pretrain_weights}")
         return False
-    
+
     # Validate downloaded checkpoint if requested
     if validate:
         is_valid, error_msg = validate_checkpoint(checkpoint_path, required_keys=['model'])
@@ -128,20 +129,20 @@ def download_pretrain_weights(pretrain_weights: str, redownload=False, validate=
             return False
         else:
             logger.info(f"Successfully downloaded and validated checkpoint: {checkpoint_path}")
-    
+
     return True
 
 
 def load_pretrain_checkpoint(checkpoint_path: str, model, args, logger):
     """
     Load pretrained checkpoint into model.
-    
+
     Args:
         checkpoint_path: Path to checkpoint file
         model: Model instance to load weights into
         args: Arguments namespace
         logger: Logger instance
-        
+
     Returns:
         checkpoint dict if loaded successfully
     """
@@ -157,8 +158,8 @@ def load_pretrain_checkpoint(checkpoint_path: str, model, args, logger):
         )
         # Try one more re-download
         checkpoint_available = download_pretrain_weights(
-            checkpoint_path, 
-            redownload=True, 
+            checkpoint_path,
+            redownload=True,
             validate=True
         )
         if not checkpoint_available:
@@ -166,13 +167,13 @@ def load_pretrain_checkpoint(checkpoint_path: str, model, args, logger):
                 f"Failed to load checkpoint after re-download: {checkpoint_path}\n"
                 f"Original error: {e}\n"
                 f"Please check the checkpoint file manually or contact support."
-            )
+            ) from e
         checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
 
     # Extract class_names from checkpoint if available
     if 'args' in checkpoint and hasattr(checkpoint['args'], 'class_names'):
         args.class_names = checkpoint['args'].class_names
-    
+
     # Issue 4 Fix: Handle missing 'args' key in checkpoint
     # Checkpoints without 'args' cannot be validated, which could be dangerous
     if 'args' not in checkpoint:
@@ -182,7 +183,7 @@ def load_pretrain_checkpoint(checkpoint_path: str, model, args, logger):
             f"This checkpoint may be from an older version or may be incompatible. "
             f"Consider re-saving the checkpoint with current version."
         )
-        
+
         if getattr(args, 'strict_checkpoint_validation', True):
             # Fail on missing args when strict validation is enabled (default)
             raise ValueError(
@@ -193,7 +194,7 @@ def load_pretrain_checkpoint(checkpoint_path: str, model, args, logger):
         else:
             # Warn but continue when strict validation is disabled
             logger.warning(warning_msg)
-    
+
     # Validate checkpoint config compatibility with current config
     # This accounts for transformations (e.g., num_classes increment) automatically
     # Uses actual model num_classes from state_dict (source of truth) rather than args
@@ -203,7 +204,7 @@ def load_pretrain_checkpoint(checkpoint_path: str, model, args, logger):
         try:
             # Get current model state_dict for accurate comparison (model is already built)
             current_model_state_dict = model.state_dict() if model is not None else None
-            
+
             is_compatible, differences, warnings = compare_configs(
                 checkpoint['args'],
                 args,
@@ -211,7 +212,7 @@ def load_pretrain_checkpoint(checkpoint_path: str, model, args, logger):
                 current_model_state_dict=current_model_state_dict,
                 critical_only=True
             )
-            
+
             # Log differences and warnings
             if differences:
                 logger.warning(
@@ -225,7 +226,7 @@ def load_pretrain_checkpoint(checkpoint_path: str, model, args, logger):
                         logger.warning(warning)
                     else:
                         logger.info(warning)
-            
+
             # Fail on critical mismatches if strict_checkpoint_validation is True
             if not is_compatible and getattr(args, 'strict_checkpoint_validation', True):
                 critical_differences = {
@@ -250,7 +251,7 @@ def load_pretrain_checkpoint(checkpoint_path: str, model, args, logger):
         except Exception as e:
             # Don't fail loading if validation fails unexpectedly - just log
             logger.warning(f"Config comparison failed (non-fatal): {e}")
-    
+
     checkpoint_num_classes = checkpoint['model']['class_embed.bias'].shape[0]
     if checkpoint_num_classes != args.num_classes + 1:
         model.reinitialize_detection_head(checkpoint_num_classes)
@@ -287,7 +288,7 @@ def load_pretrain_checkpoint(checkpoint_path: str, model, args, logger):
 def load_resume_checkpoint(resume_path: str, model_without_ddp, ema_m, optimizer, lr_scheduler, args, logger):
     """
     Load resume checkpoint for continuing training.
-    
+
     Args:
         resume_path: Path to resume checkpoint
         model_without_ddp: Model without DDP wrapper
@@ -298,7 +299,7 @@ def load_resume_checkpoint(resume_path: str, model_without_ddp, ema_m, optimizer
         logger: Logger instance
     """
     logger.info(f"Resuming training from checkpoint: {resume_path}")
-    
+
     # Step 1: Ensure checkpoint exists (download if URL, validate if local)
     try:
         resume_checkpoint_path = download_resume_checkpoint(resume_path, validate=True)
@@ -310,7 +311,7 @@ def load_resume_checkpoint(resume_path: str, model_without_ddp, ema_m, optimizer
             f"  - Network connectivity (if using URL)\n"
             f"  - File permissions (if using local path)"
         ) from e
-    
+
     # Step 2: Load checkpoint (now guaranteed to exist and be valid)
     try:
         checkpoint = torch.load(resume_checkpoint_path, map_location='cpu', weights_only=False)
@@ -321,11 +322,11 @@ def load_resume_checkpoint(resume_path: str, model_without_ddp, ema_m, optimizer
             f"The checkpoint file may have become corrupted after validation.\n"
             f"If using a URL, try re-downloading by removing the cached file."
         ) from e
-    
+
     # Step 3: Load model state
     logger.info("Loading model state from checkpoint...")
     model_without_ddp.load_state_dict(checkpoint['model'], strict=True)
-    
+
     # Step 4: Load EMA model if applicable
     if args.use_ema:
         if 'ema_model' in checkpoint:
@@ -336,7 +337,7 @@ def load_resume_checkpoint(resume_path: str, model_without_ddp, ema_m, optimizer
             del ema_m
             from rfdetr.util.utils import ModelEma
             ema_m = ModelEma(model_without_ddp, decay=args.ema_decay, tau=args.ema_tau)
-    
+
     # Step 5: Load optimizer and scheduler state if available
     if not args.eval and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
         logger.info("Loading optimizer and scheduler state from checkpoint...")
@@ -350,6 +351,6 @@ def load_resume_checkpoint(resume_path: str, model_without_ddp, ema_m, optimizer
                 "Checkpoint missing optimizer/scheduler/epoch information. "
                 "Starting from epoch 0."
             )
-    
+
     return ema_m
 

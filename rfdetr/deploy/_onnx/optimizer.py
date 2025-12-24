@@ -16,15 +16,15 @@ from copy import deepcopy
 
 import numpy as np
 import onnx
-from onnx import shape_inference
 import onnx_graphsurgeon as gs
-from polygraphy.backend.onnx.loader import fold_constants
+from onnx import shape_inference
 from onnx_graphsurgeon.logger.logger import G_LOGGER
+from polygraphy.backend.onnx.loader import fold_constants
 
 from .symbolic import CustomOpSymbolicRegistry
 
 
-class OnnxOptimizer():
+class OnnxOptimizer:
     def __init__(
         self,
         input,
@@ -37,18 +37,18 @@ class OnnxOptimizer():
         self.graph = gs.import_onnx(onnx_graph)
         self.severity = severity
         self.set_severity(severity)
-    
+
     def set_severity(self, severity):
         G_LOGGER.severity = severity
 
     def load_onnx(self, onnx_path:str):
         """Load onnx from file
         """
-        assert os.path.isfile(onnx_path), f"not found onnx file: {onnx_path}" 
+        assert os.path.isfile(onnx_path), f"not found onnx file: {onnx_path}"
         onnx_graph = onnx.load(onnx_path)
         G_LOGGER.info(f"load onnx file: {onnx_path}")
         return onnx_graph
-    
+
     def save_onnx(self, onnx_path:str):
         onnx_graph = gs.export_onnx(self.graph)
         G_LOGGER.info(f"save onnx file: {onnx_path}")
@@ -112,10 +112,10 @@ class OnnxOptimizer():
         for node in self.graph.nodes:
             if node.op == "Resize" and len(node.inputs) == 3:
                 name = node.name + "/"
-                
+
                 add_node = node.o().o().i(1)
                 div_node = node.i()
-                
+
                 shape_hw_out = gs.Variable(name=name + "shape_hw_out", dtype=np.int64, shape=[4])
                 shape_hw = gs.Node(op="Shape", name=name+"shape_hw", inputs=[add_node.outputs[0]], outputs=[shape_hw_out])
 
@@ -319,16 +319,16 @@ class OnnxOptimizer():
         # K and V must have the same output which we feed into fmha plugin
         output_tensor_k = node_k.outputs[0]
         # Create tensor
-        constant_weights_kv = gs.Constant("Weights_KV_{}".format(fused_kv_idx), np.ascontiguousarray(weights_kv))
+        constant_weights_kv = gs.Constant(f"Weights_KV_{fused_kv_idx}", np.ascontiguousarray(weights_kv))
 
         # Create fused KV node
-        fused_kv_node = gs.Node(op="MatMul", name="MatMul_KV_{}".format(fused_kv_idx), inputs=[input_tensor, constant_weights_kv], outputs=[output_tensor_k])
+        fused_kv_node = gs.Node(op="MatMul", name=f"MatMul_KV_{fused_kv_idx}", inputs=[input_tensor, constant_weights_kv], outputs=[output_tensor_k])
         self.graph.nodes.append(fused_kv_node)
 
         # Connect the output of fused node to the inputs of the nodes after K and V
         node_v.o(num_dynamic).inputs[0] = output_tensor_k
         node_k.o(num_dynamic).inputs[0] = output_tensor_k
-        for i in range(0,num_dynamic):
+        for _i in range(0,num_dynamic):
             node_v.o().inputs.clear()
             node_k.o().inputs.clear()
 
@@ -360,17 +360,17 @@ class OnnxOptimizer():
         dims_per_head = weights_kv.shape[1] // (heads * 2)
 
         # Reshape dims
-        shape = gs.Constant("Shape_KV_{}".format(mhca_idx), np.ascontiguousarray(np.array([0, 0, heads, 2, dims_per_head], dtype=np.int64)))
+        shape = gs.Constant(f"Shape_KV_{mhca_idx}", np.ascontiguousarray(np.array([0, 0, heads, 2, dims_per_head], dtype=np.int64)))
 
         # Reshape output tensor
-        output_reshape = gs.Variable("ReshapeKV_{}".format(mhca_idx), np.dtype(np.float16), None)
+        output_reshape = gs.Variable(f"ReshapeKV_{mhca_idx}", np.dtype(np.float16), None)
         # Create fMHA plugin
-        reshape = gs.Node(op="Reshape", name="Reshape_{}".format(mhca_idx), inputs=[output_kv, shape], outputs=[output_reshape])
+        reshape = gs.Node(op="Reshape", name=f"Reshape_{mhca_idx}", inputs=[output_kv, shape], outputs=[output_reshape])
         # Insert node
         self.graph.nodes.append(reshape)
 
         # Create fMHCA plugin
-        fmhca = gs.Node(op="fMHCA", name="fMHCA_{}".format(mhca_idx), inputs=[output_q, output_reshape], outputs=[output_final_tranpose])
+        fmhca = gs.Node(op="fMHCA", name=f"fMHCA_{mhca_idx}", inputs=[output_q, output_reshape], outputs=[output_final_tranpose])
         # Insert node
         self.graph.nodes.append(fmhca)
 
@@ -378,8 +378,8 @@ class OnnxOptimizer():
         node_q.o(num_dynamic).outputs[0] = output_q
 
         if num_dynamic > 0:
-            reshape2_input1_out = gs.Variable("Reshape2_fmhca{}_out".format(mhca_idx), np.dtype(np.int64), None)
-            reshape2_input1_shape = gs.Node("Shape", "Reshape2_fmhca{}_shape".format(mhca_idx), inputs=[node_q.inputs[0]], outputs=[reshape2_input1_out])
+            reshape2_input1_out = gs.Variable(f"Reshape2_fmhca{mhca_idx}_out", np.dtype(np.int64), None)
+            reshape2_input1_shape = gs.Node("Shape", f"Reshape2_fmhca{mhca_idx}_shape", inputs=[node_q.inputs[0]], outputs=[reshape2_input1_out])
             self.graph.nodes.append(reshape2_input1_shape)
             final_tranpose.o().inputs[1] = reshape2_input1_out
 
@@ -410,17 +410,17 @@ class OnnxOptimizer():
         # Q, K and V must have the same output which we feed into fmha plugin
         output_tensor_k = node_k.outputs[0]
         # Concat and interleave weights such that the output of fused QKV GEMM has [b, s, h, 3, d] shape
-        constant_weights_qkv = gs.Constant("Weights_QKV_{}".format(fused_qkv_idx), np.ascontiguousarray(weights_qkv))
+        constant_weights_qkv = gs.Constant(f"Weights_QKV_{fused_qkv_idx}", np.ascontiguousarray(weights_qkv))
 
         # Created a fused node
-        fused_qkv_node = gs.Node(op="MatMul", name="MatMul_QKV_{}".format(fused_qkv_idx), inputs=[input_tensor, constant_weights_qkv], outputs=[output_tensor_k])
+        fused_qkv_node = gs.Node(op="MatMul", name=f"MatMul_QKV_{fused_qkv_idx}", inputs=[input_tensor, constant_weights_qkv], outputs=[output_tensor_k])
         self.graph.nodes.append(fused_qkv_node)
 
         # Connect the output of the fused node to the inputs of the nodes after Q, K and V
         node_q.o(num_dynamic).inputs[0] = output_tensor_k
         node_k.o(num_dynamic).inputs[0] = output_tensor_k
         node_v.o(num_dynamic).inputs[0] = output_tensor_k
-        for i in range(0,num_dynamic):
+        for _i in range(0,num_dynamic):
             node_q.o().inputs.clear()
             node_k.o().inputs.clear()
             node_v.o().inputs.clear()
@@ -452,23 +452,23 @@ class OnnxOptimizer():
         dims_per_head = weights_qkv.shape[1] // (heads * 3)
 
         # Reshape dims
-        shape = gs.Constant("Shape_QKV_{}".format(mha_idx), np.ascontiguousarray(np.array([0, 0, heads, 3, dims_per_head], dtype=np.int64)))
+        shape = gs.Constant(f"Shape_QKV_{mha_idx}", np.ascontiguousarray(np.array([0, 0, heads, 3, dims_per_head], dtype=np.int64)))
 
         # Reshape output tensor
-        output_shape = gs.Variable("ReshapeQKV_{}".format(mha_idx), np.dtype(np.float16), None)
+        output_shape = gs.Variable(f"ReshapeQKV_{mha_idx}", np.dtype(np.float16), None)
         # Create fMHA plugin
-        reshape = gs.Node(op="Reshape", name="Reshape_{}".format(mha_idx), inputs=[output_qkv, shape], outputs=[output_shape])
+        reshape = gs.Node(op="Reshape", name=f"Reshape_{mha_idx}", inputs=[output_qkv, shape], outputs=[output_shape])
         # Insert node
         self.graph.nodes.append(reshape)
 
         # Create fMHA plugin
-        fmha = gs.Node(op="fMHA_V2", name="fMHA_{}".format(mha_idx), inputs=[output_shape], outputs=[output_final_tranpose])
+        fmha = gs.Node(op="fMHA_V2", name=f"fMHA_{mha_idx}", inputs=[output_shape], outputs=[output_final_tranpose])
         # Insert node
         self.graph.nodes.append(fmha)
 
         if num_dynamic > 0:
-            reshape2_input1_out = gs.Variable("Reshape2_{}_out".format(mha_idx), np.dtype(np.int64), None)
-            reshape2_input1_shape = gs.Node("Shape", "Reshape2_{}_shape".format(mha_idx), inputs=[node_qkv.inputs[0]], outputs=[reshape2_input1_out])
+            reshape2_input1_out = gs.Variable(f"Reshape2_{mha_idx}_out", np.dtype(np.int64), None)
+            reshape2_input1_shape = gs.Node("Shape", f"Reshape2_{mha_idx}_shape", inputs=[node_qkv.inputs[0]], outputs=[reshape2_input1_out])
             self.graph.nodes.append(reshape2_input1_shape)
             final_tranpose.o().inputs[1] = reshape2_input1_out
 

@@ -20,10 +20,10 @@ Mostly copy-paste from https://github.com/pytorch/vision/blob/13b35ff/references
 """
 from pathlib import Path
 
+import pycocotools.mask as coco_mask
 import torch
 import torch.utils.data
 import torchvision
-import pycocotools.mask as coco_mask
 
 import rfdetr.datasets.transforms as T
 
@@ -65,13 +65,13 @@ def convert_coco_poly_to_mask(segmentations, height, width):
 
 class CocoDetection(torchvision.datasets.CocoDetection):
     def __init__(self, img_folder, ann_file, transforms, include_masks=False):
-        super(CocoDetection, self).__init__(img_folder, ann_file)
+        super().__init__(img_folder, ann_file)
         self._transforms = transforms
         self.include_masks = include_masks
         self.prepare = ConvertCoco(include_masks=include_masks)
 
     def __getitem__(self, idx):
-        img, target = super(CocoDetection, self).__getitem__(idx)
+        img, target = super().__getitem__(idx)
         image_id = self.ids[idx]
         target = {'image_id': image_id, 'annotations': target}
         img, target = self.prepare(img, target)
@@ -80,7 +80,7 @@ class CocoDetection(torchvision.datasets.CocoDetection):
         return img, target
 
 
-class ConvertCoco(object):
+class ConvertCoco:
 
     def __init__(self, include_masks=False):
         self.include_masks = include_masks
@@ -242,9 +242,9 @@ def build(image_set, args, resolution):
         "val": (root /  "val2017", root / "annotations" / f'{mode}_val2017.json'),
         "test": (root / "test2017", root / "annotations" / 'image_info_test-dev2017.json'),
     }
-    
+
     img_folder, ann_file = PATHS[image_set.split("_")[0]]
-    
+
     square_resize_div_64 = getattr(args, 'square_resize_div_64', False)
 
     if square_resize_div_64:
@@ -277,9 +277,9 @@ def build_roboflow(image_set, args, resolution):
         "val": (root /  "valid", root / "valid" / "_annotations.coco.json"),
         "test": (root / "test", root / "test" / "_annotations.coco.json"),
     }
-    
+
     img_folder, ann_file = PATHS[image_set.split("_")[0]]
-    
+
     square_resize_div_64 = getattr(args, 'square_resize_div_64', False)
     include_masks = getattr(args, 'segmentation_head', False)
 

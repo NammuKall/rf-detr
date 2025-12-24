@@ -22,19 +22,24 @@ LW-DETR model and criterion classes
 import copy
 import math
 from typing import Callable
+
 import torch
 import torch.nn.functional as F
 from torch import nn
 
-from rfdetr.util import box_ops
-from rfdetr.util.misc import (NestedTensor, nested_tensor_from_tensor_list,
-                       accuracy, get_world_size,
-                       is_dist_avail_and_initialized)
-
 from rfdetr.models.backbone import build_backbone
 from rfdetr.models.matcher import build_matcher
-from rfdetr.models.transformer import build_transformer
 from rfdetr.models.segmentation_head import SegmentationHead, get_uncertain_point_coords_with_randomness, point_sample
+from rfdetr.models.transformer import build_transformer
+from rfdetr.util import box_ops
+from rfdetr.util.misc import (
+    NestedTensor,
+    accuracy,
+    get_world_size,
+    is_dist_avail_and_initialized,
+    nested_tensor_from_tensor_list,
+)
+
 
 class LWDETR(nn.Module):
     """ This is the Group DETR v3 module that performs object detection """
@@ -67,7 +72,7 @@ class LWDETR(nn.Module):
         self.class_embed = nn.Linear(hidden_dim, num_classes)
         self.bbox_embed = MLP(hidden_dim, hidden_dim, 4, 3)
         self.segmentation_head = segmentation_head
-        
+
         query_dim=4
         self.refpoint_embed = nn.Embedding(num_queries * group_detr, query_dim)
         self.query_feat = nn.Embedding(num_queries * group_detr, hidden_dim)
@@ -112,7 +117,7 @@ class LWDETR(nn.Module):
         self.class_embed.weight.data = self.class_embed.weight.data[:num_classes]
         self.class_embed.bias.data = self.class_embed.bias.data.repeat(num_repeats)
         self.class_embed.bias.data = self.class_embed.bias.data[:num_classes]
-        
+
         if self.two_stage:
             for enc_out_class_embed in self.transformer.enc_out_class_embed:
                 enc_out_class_embed.weight.data = enc_out_class_embed.weight.data.repeat(num_repeats, 1)
@@ -124,7 +129,7 @@ class LWDETR(nn.Module):
         self._export = True
         self._forward_origin = self.forward
         self.forward = self.forward_export
-        for name, m in self.named_modules():
+        for _name, m in self.named_modules():
             if hasattr(m, "export") and isinstance(m.export, Callable) and hasattr(m, "_export") and not m._export:
                 m.export()
 
@@ -149,7 +154,7 @@ class LWDETR(nn.Module):
 
         srcs = []
         masks = []
-        for lvl, feat in enumerate(features):
+        for _lvl, feat in enumerate(features):
             src, mask = feat.decompose()
             srcs.append(src)
             masks.append(mask)
@@ -330,7 +335,7 @@ class SetCriterion(nn.Module):
 
         if self.ia_bce_loss:
             alpha = self.focal_alpha
-            gamma = 2 
+            gamma = 2
             src_boxes = outputs['pred_boxes'][idx]
             target_boxes = torch.cat([t['boxes'][i] for t, (_, i) in zip(targets, indices)], dim=0)
 
@@ -343,7 +348,7 @@ class SetCriterion(nn.Module):
             pos_weights = torch.zeros_like(src_logits)
             neg_weights =  prob ** gamma
 
-            pos_ind=[id for id in idx]
+            pos_ind=list(idx)
             pos_ind.append(target_classes_o)
 
             t = prob[pos_ind].pow(alpha) * pos_ious.pow(1 - alpha)
@@ -370,7 +375,7 @@ class SetCriterion(nn.Module):
             cls_iou_func_targets = torch.zeros((src_logits.shape[0], src_logits.shape[1],self.num_classes),
                                         dtype=src_logits.dtype, device=src_logits.device)
 
-            pos_ind=[id for id in idx]
+            pos_ind=list(idx)
             pos_ind.append(target_classes_o)
             cls_iou_func_targets[pos_ind] = pos_ious_func
             norm_cls_iou_func_targets = cls_iou_func_targets \
@@ -389,7 +394,7 @@ class SetCriterion(nn.Module):
             cls_iou_targets = torch.zeros((src_logits.shape[0], src_logits.shape[1],self.num_classes),
                                         dtype=src_logits.dtype, device=src_logits.device)
 
-            pos_ind=[id for id in idx]
+            pos_ind=list(idx)
             pos_ind.append(target_classes_o)
             cls_iou_targets[pos_ind] = pos_ious
             loss_ce = sigmoid_varifocal_loss(src_logits, cls_iou_targets, num_boxes, alpha=self.focal_alpha, gamma=2) * src_logits.shape[1]
@@ -445,7 +450,7 @@ class SetCriterion(nn.Module):
             box_ops.box_cxcywh_to_xyxy(target_boxes)))
         losses['loss_giou'] = loss_giou.sum() / num_boxes
         return losses
-    
+
     def loss_masks(self, outputs, targets, indices, num_boxes):
         """Compute BCE-with-logits and Dice losses for segmentation masks on matched pairs.
         Expects outputs to contain 'pred_masks' of shape [B, Q, H, W] and targets with key 'masks'.
@@ -463,7 +468,7 @@ class SetCriterion(nn.Module):
             }
         # gather matched target masks
         target_masks = torch.cat([t['masks'][j] for t, (_, j) in zip(targets, indices)], dim=0)  # [N, Ht, Wt]
-        
+
         # No need to upsample predictions as we are using normalized coordinates :)
         # N x 1 x H x W
         src_masks = src_masks.unsqueeze(1)
@@ -502,8 +507,8 @@ class SetCriterion(nn.Module):
         del src_masks
         del target_masks
         return losses
-    
- 
+
+
     def _get_src_permutation_idx(self, indices):
         # permute predictions following indices
         batch_idx = torch.cat([torch.full_like(src, i) for i, (src, _) in enumerate(indices)])
@@ -782,7 +787,7 @@ def build_model(args):
 
     # Get cross-scale fusion setting
     use_cross_scale_fusion = getattr(args, 'use_cross_scale_fusion', False)
-    
+
     backbone = build_backbone(
         encoder=args.encoder,
         vit_encoder_num_layers=args.vit_encoder_num_layers,
@@ -856,7 +861,7 @@ def build_criterion_and_postprocessors(args):
     sum_group_losses = getattr(args, 'sum_group_losses', False)
     if args.segmentation_head:
         criterion = SetCriterion(args.num_classes + 1, matcher=matcher, weight_dict=weight_dict,
-                                focal_alpha=args.focal_alpha, losses=losses, 
+                                focal_alpha=args.focal_alpha, losses=losses,
                                 group_detr=args.group_detr, sum_group_losses=sum_group_losses,
                                 use_varifocal_loss = args.use_varifocal_loss,
                                 use_position_supervised_loss=args.use_position_supervised_loss,
@@ -864,7 +869,7 @@ def build_criterion_and_postprocessors(args):
                                 mask_point_sample_ratio=args.mask_point_sample_ratio)
     else:
         criterion = SetCriterion(args.num_classes + 1, matcher=matcher, weight_dict=weight_dict,
-                                focal_alpha=args.focal_alpha, losses=losses, 
+                                focal_alpha=args.focal_alpha, losses=losses,
                                 group_detr=args.group_detr, sum_group_losses=sum_group_losses,
                                 use_varifocal_loss = args.use_varifocal_loss,
                                 use_position_supervised_loss=args.use_position_supervised_loss,

@@ -4,17 +4,17 @@
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]
 # ------------------------------------------------------------------------
 
+import json
+import math
+import os
+import types
+
 import torch
 import torch.nn as nn
-from transformers import AutoBackbone
 import torch.nn.functional as F
-import types
-import math
-import json
-import os
+from transformers import AutoBackbone
 
-from .dinov2_with_windowed_attn import WindowedDinov2WithRegistersConfig, WindowedDinov2WithRegistersBackbone
-
+from .dinov2_with_windowed_attn import WindowedDinov2WithRegistersBackbone, WindowedDinov2WithRegistersConfig
 
 size_to_width = {
     "tiny": 192,
@@ -40,7 +40,7 @@ def get_config(size, use_registers):
     current_dir = os.path.dirname(os.path.abspath(__file__))
     configs_dir = os.path.join(current_dir, "dinov2_configs")
     config_path = os.path.join(configs_dir, config_dict[size])
-    with open(config_path, "r") as f:
+    with open(config_path) as f:
         dino_config = json.load(f)
     return dino_config
 
@@ -48,7 +48,7 @@ def get_config(size, use_registers):
 class DinoV2(nn.Module):
     def __init__(self,
             shape=(640, 640),
-            out_feature_indexes=[2, 4, 5, 9],
+            out_feature_indexes=None,
             size="base",
             use_registers=True,
             use_windowed_attn=True,
@@ -58,6 +58,8 @@ class DinoV2(nn.Module):
             num_windows=4,
             positional_encoding_size=37,
             ):
+        if out_feature_indexes is None:
+            out_feature_indexes = [2, 4, 5, 9]
         super().__init__()
 
         name = f"facebook/dinov2-with-registers-{size}" if use_registers else f"facebook/dinov2-{size}"
@@ -65,9 +67,9 @@ class DinoV2(nn.Module):
         self.shape = shape
         self.patch_size = patch_size
         self.num_windows = num_windows
-        
+
         # Create the encoder
-        
+
         if not use_windowed_attn:
             assert not gradient_checkpointing, "Gradient checkpointing is not supported for non-windowed attention"
             assert load_dinov2_weights, "Using non-windowed attention requires loading dinov2 weights from hub"
@@ -178,7 +180,7 @@ class DinoV2(nn.Module):
 
         self.encoder.embeddings.position_embeddings = nn.Parameter(new_positions)
         self.encoder.embeddings.interpolate_pos_encoding = types.MethodType(
-            new_interpolate_pos_encoding, 
+            new_interpolate_pos_encoding,
             self.encoder.embeddings
         )
 

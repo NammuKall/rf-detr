@@ -13,10 +13,10 @@ from rfdetr.api import (
     RFDETR,
     RFDETRBase,
     RFDETRLarge,
-    RFDETRNano,
-    RFDETRSmall,
     RFDETRMedium,
+    RFDETRNano,
     RFDETRSegPreview,
+    RFDETRSmall,
 )
 
 __all__ = [

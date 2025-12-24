@@ -22,10 +22,11 @@ import pickle
 import subprocess
 import time
 from collections import defaultdict, deque
-from typing import Optional, List
+from typing import Optional
 
 import torch
 import torch.distributed as dist
+
 # needed due to empty tensor bug in pytorch and torchvision 0.5
 import torchvision
 from torch import Tensor
@@ -35,7 +36,7 @@ if float(torchvision.__version__.split(".")[1]) < 7.0:
     from torchvision.ops.misc import _output_size
 
 
-class SmoothedValue(object):
+class SmoothedValue:
     """Track a series of values and provide access to smoothed values over a
     window or the global series average.
     """
@@ -163,11 +164,11 @@ def reduce_dict(input_dict, average=True):
         dist.all_reduce(values)
         if average:
             values /= world_size
-        reduced_dict = {k: v for k, v in zip(names, values)}
+        reduced_dict = dict(zip(names, values))
     return reduced_dict
 
 
-class MetricLogger(object):
+class MetricLogger:
     def __init__(self, delimiter="\t", wandb_logging=False):
         self.meters = defaultdict(SmoothedValue)
         self.delimiter = delimiter
@@ -189,14 +190,13 @@ class MetricLogger(object):
             return self.meters[attr]
         if attr in self.__dict__:
             return self.__dict__[attr]
-        raise AttributeError("'{}' object has no attribute '{}'".format(
-            type(self).__name__, attr))
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{attr}'")
 
     def __str__(self):
         loss_str = []
         for name, meter in self.meters.items():
             loss_str.append(
-                "{}: {}".format(name, str(meter))
+                f"{name}: {str(meter)}"
             )
         return self.delimiter.join(loss_str)
 
@@ -262,8 +262,7 @@ class MetricLogger(object):
             end = time.time()
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-        print('{} Total time: {} ({:.4f} s / it)'.format(
-            header, total_time_str, total_time / len(iterable)))
+        print(f'{header} Total time: {total_time_str} ({total_time / len(iterable):.4f} s / it)')
 
 
 def get_sha():
@@ -301,7 +300,7 @@ def _max_by_axis(the_list):
     return maxes
 
 
-class NestedTensor(object):
+class NestedTensor:
     def __init__(self, tensors, mask: Optional[Tensor]):
         self.tensors = tensors
         self.mask = mask
@@ -331,10 +330,10 @@ def ensure_regular_tensor(tensor: Tensor) -> Tensor:
     """
     Ensure a tensor is a regular tensor (not an inference tensor) that can participate in autograd.
     This function creates a fresh tensor that is guaranteed to be a regular tensor.
-    
+
     Args:
         tensor: Input tensor that might be an inference tensor
-        
+
     Returns:
         A fresh regular tensor with the same data, dtype, and device
     """
@@ -347,7 +346,7 @@ def ensure_regular_tensor(tensor: Tensor) -> Tensor:
     return torch.tensor(np_data, device=tensor.device, dtype=tensor.dtype, requires_grad=False)
 
 
-def nested_tensor_from_tensor_list(tensor_list: List[Tensor]):
+def nested_tensor_from_tensor_list(tensor_list: list[Tensor]):
     # TODO make this more general
     if tensor_list[0].ndim == 3:
         if torchvision._is_tracing():
@@ -358,7 +357,7 @@ def nested_tensor_from_tensor_list(tensor_list: List[Tensor]):
         # Ensure all input tensors are regular tensors (not inference tensors)
         # This prevents inference tensor properties from propagating
         regular_tensor_list = [ensure_regular_tensor(img) for img in tensor_list]
-        
+
         # TODO make it support different-sized images
         max_size = _max_by_axis([list(img.shape) for img in regular_tensor_list])
         # min_size = tuple(min(s) for s in zip(*[img.shape for img in tensor_list]))
@@ -366,12 +365,12 @@ def nested_tensor_from_tensor_list(tensor_list: List[Tensor]):
         b, c, h, w = batch_shape
         dtype = regular_tensor_list[0].dtype
         device = regular_tensor_list[0].device
-        
+
         # Create fresh tensors (not inference tensors)
         with torch.enable_grad():
             tensor = torch.zeros(batch_shape, dtype=dtype, device=device)
             mask = torch.ones((b, h, w), dtype=torch.bool, device=device)
-        
+
         for img, pad_img, m in zip(regular_tensor_list, tensor, mask):
             pad_img[: img.shape[0], : img.shape[1], : img.shape[2]].copy_(img)
             m[: img.shape[1], :img.shape[2]] = False
@@ -383,7 +382,7 @@ def nested_tensor_from_tensor_list(tensor_list: List[Tensor]):
 # _onnx_nested_tensor_from_tensor_list() is an implementation of
 # nested_tensor_from_tensor_list() that is supported by ONNX tracing.
 @torch.jit.unused
-def _onnx_nested_tensor_from_tensor_list(tensor_list: List[Tensor]) -> NestedTensor:
+def _onnx_nested_tensor_from_tensor_list(tensor_list: list[Tensor]) -> NestedTensor:
     max_size = []
     for i in range(tensor_list[0].dim()):
         max_size_i = torch.max(torch.stack([img.shape[i] for img in tensor_list]).to(torch.float32)).to(torch.int64)
@@ -474,8 +473,7 @@ def init_distributed_mode(args):
 
     torch.cuda.set_device(args.gpu)
     args.dist_backend = 'nccl'
-    print('| distributed init (rank {}): {}'.format(
-        args.rank, args.dist_url), flush=True)
+    print(f'| distributed init (rank {args.rank}): {args.dist_url}', flush=True)
     torch.distributed.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
                                          world_size=args.world_size, rank=args.rank)
     torch.distributed.barrier()

@@ -10,11 +10,10 @@
 """Dataset file for Object365."""
 from pathlib import Path
 
-from .coco import (
-    CocoDetection, make_coco_transforms, make_coco_transforms_square_div_64
-)
-
 from PIL import Image
+
+from .coco import CocoDetection, make_coco_transforms, make_coco_transforms_square_div_64
+
 Image.MAX_IMAGE_PIXELS = None
 
 
@@ -25,7 +24,7 @@ def build_o365_raw(image_set, args, resolution):
         "val": (root, root / 'zhiyuan_objv2_minival5k.json'),
     }
     img_folder, ann_file = PATHS[image_set]
-    
+
     square_resize_div_64 = getattr(args, 'square_resize_div_64', False)
 
     if square_resize_div_64:
@@ -42,4 +41,4 @@ def build_o365(image_set, args, resolution):
     if image_set == 'val':
         val_ds = build_o365_raw('val', args, resolution=resolution)
         return val_ds
-    raise ValueError('Unknown image_set: {}'.format(image_set))
+    raise ValueError(f'Unknown image_set: {image_set}')

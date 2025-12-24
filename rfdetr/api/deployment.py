@@ -6,8 +6,9 @@
 
 import os
 import shutil
-import torch
 from logging import getLogger
+
+import torch
 
 logger = getLogger(__name__)
 
@@ -34,7 +35,7 @@ def deploy_to_roboflow(self, workspace: str, project_id: str, version: str, api_
             variable `ROBOFLOW_API_KEY`, or if the `size` is not set for custom architectures.
     """
     from roboflow import Roboflow
-    
+
     if api_key is None:
         api_key = os.getenv("ROBOFLOW_API_KEY")
         if api_key is None:

@@ -4,9 +4,9 @@
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]
 # ------------------------------------------------------------------------
 
-from typing import Union, List
 from copy import deepcopy
 from logging import getLogger
+from typing import Union
 
 import numpy as np
 import supervision as sv
@@ -35,7 +35,7 @@ def optimize_for_inference(self, compile=True, batch_size=1, dtype=torch.float32
         self.model.inference_model = torch.jit.trace(
             self.model.inference_model,
             torch.randn(
-                batch_size, 3, self.model.resolution, self.model.resolution, 
+                batch_size, 3, self.model.resolution, self.model.resolution,
                 device=self.model.device,
                 dtype=dtype
             )
@@ -56,10 +56,10 @@ def remove_optimized_model(self):
 
 def predict(
     self,
-    images: Union[str, Image.Image, np.ndarray, torch.Tensor, List[Union[str, np.ndarray, Image.Image, torch.Tensor]]],
+    images: Union[str, Image.Image, np.ndarray, torch.Tensor, list[Union[str, np.ndarray, Image.Image, torch.Tensor]]],
     threshold: float = 0.5,
     **kwargs,
-) -> Union[sv.Detections, List[sv.Detections]]:
+) -> Union[sv.Detections, list[sv.Detections]]:
     """Performs object detection on the input images and returns bounding box
     predictions.
 
@@ -105,7 +105,7 @@ def predict(
 
         if not isinstance(img, torch.Tensor):
             img = F.to_tensor(img)
-        
+
         if (img > 1).any():
             raise ValueError(
                 "Image has pixel values above 1. Please ensure the image is "
@@ -117,7 +117,7 @@ def predict(
                 f"{img.shape[0]} channels."
             )
         img_tensor = img
-        
+
         h, w = img_tensor.shape[1:]
         orig_sizes.append((h, w))
 

@@ -76,14 +76,14 @@ def get_activation(name, inplace=False):
     elif name is None:
         module = nn.Identity()
     else:
-        raise AttributeError("Unsupported act type: {}".format(name))
+        raise AttributeError(f"Unsupported act type: {name}")
     return module
 
 
 class ConvX(nn.Module):
     """ Conv-bn module"""
     def __init__(self, in_planes, out_planes, kernel=3, stride=1, groups=1, dilation=1, act='relu', layer_norm=False, rms_norm=False):
-        super(ConvX, self).__init__()
+        super().__init__()
         if not isinstance(kernel, tuple):
             kernel = (kernel, kernel)
         padding = (kernel[0] // 2, kernel[1] // 2)
@@ -148,10 +148,10 @@ class CrossScaleFusion(nn.Module):
         # Cross-scale attention weights (learnable)
         self.fusion_weights = nn.Parameter(torch.ones(num_scales) / num_scales)
         # Feature fusion convolution
-        self.fusion_conv = ConvX(channels * num_scales, channels, kernel=1, 
+        self.fusion_conv = ConvX(channels * num_scales, channels, kernel=1,
                                  layer_norm=layer_norm, act='silu')
         self.norm = get_norm('LN', channels) if layer_norm else nn.Identity()
-        
+
     def forward(self, features):
         """
         Args:
@@ -161,10 +161,10 @@ class CrossScaleFusion(nn.Module):
         """
         if len(features) <= 1:
             return features
-        
+
         # Store original sizes
         original_sizes = [feat.shape[-2:] for feat in features]
-        
+
         # Resize all features to the same size (use the largest scale as reference)
         target_size = features[0].shape[-2:]  # Use first (usually largest) as target
         resized_features = []
@@ -174,25 +174,25 @@ class CrossScaleFusion(nn.Module):
             else:
                 feat_resized = feat
             resized_features.append(feat_resized)
-        
+
         # Weighted fusion (simple weighted sum)
         weights_normalized = F.softmax(self.fusion_weights, dim=0)
         fused = sum(w * feat for w, feat in zip(weights_normalized, resized_features))
-        
+
         # Cross-scale interaction: concatenate all scales and fuse
         concat_feat = torch.cat(resized_features, dim=1)  # (B, C*num_scales, H, W)
         fused = self.fusion_conv(concat_feat) + fused  # Residual connection
-        
+
         # Resize back to original sizes and add residual
         output_features = []
-        for i, (feat, orig_size) in enumerate(zip(features, original_sizes)):
+        for _i, (feat, orig_size) in enumerate(zip(features, original_sizes)):
             if orig_size != target_size:
                 output = F.interpolate(fused, size=orig_size, mode='bilinear', align_corners=False)
             else:
                 output = fused
             # Add residual connection to original feature
             output_features.append(self.norm(output + feat))
-        
+
         return output_features
 
 
@@ -223,13 +223,13 @@ class MultiScaleProjector(nn.Module):
             scale_factors (list[float]): list of scaling factors to upsample or downsample
                 the input features for creating pyramid features.
         """
-        super(MultiScaleProjector, self).__init__()
+        super().__init__()
 
         self.scale_factors = scale_factors
         self.survival_prob = survival_prob
         self.force_drop_last_n_features = force_drop_last_n_features
         self.use_cross_scale_fusion = use_cross_scale_fusion
-        
+
         # NEW: Add cross-scale fusion module
         if use_cross_scale_fusion:
             self.cross_scale_fusion = CrossScaleFusion(
@@ -282,7 +282,7 @@ class MultiScaleProjector(nn.Module):
                     self.use_extra_pool = True
                     continue
                 else:
-                    raise NotImplementedError("Unsupported scale_factor:{}".format(scale))
+                    raise NotImplementedError(f"Unsupported scale_factor:{scale}")
                 layers = nn.Sequential(*layers)
                 stages_sampling[-1].append(layers)
             stages_sampling[-1] = nn.ModuleList(stages_sampling[-1])
@@ -321,7 +321,7 @@ class MultiScaleProjector(nn.Module):
             for i in range(self.force_drop_last_n_features):
                 # don't do it inplace to ensure the compiler can optimize out the backbone layers
                 x[-(i+1)] = torch.zeros_like(x[-(i+1)])
-                
+
         results = []
         # x list of len(out_features_indexes)
         for i, stage in enumerate(self.stages):
@@ -337,17 +337,17 @@ class MultiScaleProjector(nn.Module):
             results.append(
                 F.max_pool2d(results[-1], kernel_size=1, stride=2, padding=0)
             )
-        
+
         # NEW: Apply cross-scale fusion if enabled
         if self.cross_scale_fusion is not None:
             results = self.cross_scale_fusion(results)
-        
+
         return results
 
 
 class SimpleProjector(nn.Module):
     def __init__(self, in_dim, out_dim, factor_kernel=False):
-        super(SimpleProjector, self).__init__()
+        super().__init__()
         if not factor_kernel:
             self.convx1 = ConvX(in_dim, in_dim*2, layer_norm=True, act='silu')
             self.convx2 = ConvX(in_dim*2, out_dim, layer_norm=True, act='silu')
