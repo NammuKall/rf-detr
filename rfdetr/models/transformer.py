@@ -80,7 +80,6 @@ def gen_encoder_output_proposals(memory, memory_padding_mask, spatial_shapes, un
         - output_proposals: bs, \sum{hw}, 4
     """
     N_, S_, C_ = memory.shape
-    base_scale = 4.0
     proposals = []
     _cur = 0
     for lvl, (H_, W_) in enumerate(spatial_shapes):
@@ -685,21 +684,11 @@ def _get_clones(module, N):
 
 def build_transformer(args):
     
-    try:
-        two_stage = args.two_stage
-    except:
-        two_stage = False
+    two_stage = getattr(args, 'two_stage', False)
     
     # NEW: Get encoder parameters (default to 0 if not specified)
-    try:
-        num_encoder_layers = args.num_encoder_layers
-    except:
-        num_encoder_layers = 0
-    
-    try:
-        enc_n_points = args.enc_n_points
-    except:
-        enc_n_points = 4  # Default to 4 points like decoder
+    num_encoder_layers = getattr(args, 'num_encoder_layers', 0)
+    enc_n_points = getattr(args, 'enc_n_points', 4)  # Default to 4 points like decoder
 
     return Transformer(
         d_model=args.hidden_dim,

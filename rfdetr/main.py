@@ -17,11 +17,9 @@
 cleaned main file
 """
 import argparse
-import ast
 import copy
 import datetime
 import json
-import math
 import os
 import random
 import shutil
@@ -42,9 +40,8 @@ from rfdetr.engine import evaluate, train_one_epoch
 from rfdetr.models import build_model, build_criterion_and_postprocessors, PostProcess
 from rfdetr.util.benchmark import benchmark
 from rfdetr.util.drop_scheduler import drop_scheduler
-from rfdetr.util.checkpoint import download_resume_checkpoint
 from rfdetr.util.get_param_dicts import get_param_dict
-from rfdetr.util.utils import ModelEma, BestMetricHolder, clean_state_dict
+from rfdetr.util.utils import ModelEma, BestMetricHolder
 from rfdetr.training import (
     download_pretrain_weights,
     load_pretrain_checkpoint,
@@ -423,7 +420,7 @@ class Model:
             log_stats.update(ep_paras)
             try:
                 log_stats.update({'now_time': str(datetime.datetime.now())})
-            except:
+            except Exception:
                 pass
             log_stats['train_epoch_time'] = train_epoch_time_str
             epoch_time = time.time() - epoch_start_time
@@ -508,7 +505,7 @@ class Model:
     
     def export(self, output_dir="output", infer_dir=None, simplify=False,  backbone_only=False, opset_version=17, verbose=True, force=False, shape=None, batch_size=1, **kwargs):
         """Export the trained model to ONNX format"""
-        print(f"Exporting model to ONNX format")
+        print("Exporting model to ONNX format")
         try:
             from rfdetr.deploy.export import export_onnx, onnx_simplify, make_infer_image
         except ImportError:

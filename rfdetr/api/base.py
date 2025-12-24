@@ -10,7 +10,6 @@ from collections import defaultdict
 from logging import getLogger
 from typing import Union, List
 
-from typing import Union, List
 
 import numpy as np
 import supervision as sv
@@ -223,6 +222,15 @@ class RFDETR:
         if config.dataset_file == "roboflow":
             with open(
                 os.path.join(config.dataset_dir, "train", "_annotations.coco.json"), "r"
+            ) as f:
+                anns = json.load(f)
+                num_classes = len(anns["categories"])
+                class_names = [c["name"] for c in anns["categories"] if c["supercategory"] != "none"]
+                self.model.class_names = class_names
+        elif config.dataset_file == "simsurg":
+            # SimSurg uses COCO format with annotations in a separate folder
+            with open(
+                os.path.join(config.dataset_dir, "annotations", "instances_train.json"), "r"
             ) as f:
                 anns = json.load(f)
                 num_classes = len(anns["categories"])

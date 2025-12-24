@@ -149,7 +149,7 @@ class LWDETR(nn.Module):
 
         srcs = []
         masks = []
-        for l, feat in enumerate(features):
+        for lvl, feat in enumerate(features):
             src, mask = feat.decompose()
             srcs.append(src)
             masks.append(mask)
@@ -575,7 +575,7 @@ class SetCriterion(nn.Module):
                     # Logging is enabled only for the last layer
                     kwargs['log'] = False
                 l_dict = self.get_loss(loss, enc_outputs, targets, indices, num_boxes, **kwargs)
-                l_dict = {k + f'_enc': v for k, v in l_dict.items()}
+                l_dict = {k + '_enc': v for k, v in l_dict.items()}
                 losses.update(l_dict)
 
         return losses
@@ -747,7 +747,7 @@ class PostProcess(nn.Module):
                 res_i['masks'] = masks_i > 0.0
                 results.append(res_i)
         else:
-            results = [{'scores': s, 'labels': l, 'boxes': b} for s, l, b in zip(scores, labels, boxes)]
+            results = [{'scores': s, 'labels': lbl, 'boxes': b} for s, lbl, b in zip(scores, labels, boxes)]
 
         return results
 
@@ -777,14 +777,11 @@ def build_model(args):
     # For more details on this, check the following discussion
     # https://github.com/facebookresearch/detr/issues/108#issuecomment-650269223
     num_classes = args.num_classes + 1
-    device = torch.device(args.device)
+    torch.device(args.device)
 
 
     # Get cross-scale fusion setting
-    try:
-        use_cross_scale_fusion = args.use_cross_scale_fusion
-    except:
-        use_cross_scale_fusion = False
+    use_cross_scale_fusion = getattr(args, 'use_cross_scale_fusion', False)
     
     backbone = build_backbone(
         encoder=args.encoder,
@@ -849,17 +846,14 @@ def build_criterion_and_postprocessors(args):
         for i in range(args.dec_layers - 1):
             aux_weight_dict.update({k + f'_{i}': v for k, v in weight_dict.items()})
         if args.two_stage:
-            aux_weight_dict.update({k + f'_enc': v for k, v in weight_dict.items()})
+            aux_weight_dict.update({k + '_enc': v for k, v in weight_dict.items()})
         weight_dict.update(aux_weight_dict)
 
     losses = ['labels', 'boxes', 'cardinality']
     if args.segmentation_head:
         losses.append('masks')
 
-    try:
-        sum_group_losses = args.sum_group_losses
-    except:
-        sum_group_losses = False
+    sum_group_losses = getattr(args, 'sum_group_losses', False)
     if args.segmentation_head:
         criterion = SetCriterion(args.num_classes + 1, matcher=matcher, weight_dict=weight_dict,
                                 focal_alpha=args.focal_alpha, losses=losses, 

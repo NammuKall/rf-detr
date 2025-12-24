@@ -215,7 +215,7 @@ def load_pretrain_checkpoint(checkpoint_path: str, model, args, logger):
             # Log differences and warnings
             if differences:
                 logger.warning(
-                    f"Config differences detected between checkpoint and current config:\n"
+                    "Config differences detected between checkpoint and current config:\n"
                     + "\n".join(f"  - {param}: checkpoint={vals['checkpoint']}, current={vals['current']}"
                               for param, vals in differences.items())
                 )
@@ -235,13 +235,13 @@ def load_pretrain_checkpoint(checkpoint_path: str, model, args, logger):
                                 'out_feature_indexes', 'num_classes_transformed']
                 }
                 error_msg = (
-                    f"CRITICAL: Checkpoint config is incompatible with current config.\n"
-                    f"Loading this checkpoint with mismatched architecture parameters will cause errors.\n\n"
-                    f"Critical mismatches:\n"
+                    "CRITICAL: Checkpoint config is incompatible with current config.\n"
+                    "Loading this checkpoint with mismatched architecture parameters will cause errors.\n\n"
+                    "Critical mismatches:\n"
                     + "\n".join(f"  - {param}: checkpoint={vals['checkpoint']}, current={vals['current']}"
                               for param, vals in critical_differences.items())
-                    + f"\n\nTo proceed anyway, set strict_checkpoint_validation=False when creating the Model.\n"
-                    f"However, this may cause runtime errors or incorrect model behavior."
+                    + "\n\nTo proceed anyway, set strict_checkpoint_validation=False when creating the Model.\n"
+                    "However, this may cause runtime errors or incorrect model behavior."
                 )
                 raise ValueError(error_msg)
         except ValueError:

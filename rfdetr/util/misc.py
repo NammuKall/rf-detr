@@ -24,7 +24,6 @@ import time
 from collections import defaultdict, deque
 from typing import Optional, List
 
-import numpy as np
 import torch
 import torch.distributed as dist
 # needed due to empty tensor bug in pytorch and torchvision 0.5
