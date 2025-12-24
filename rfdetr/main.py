@@ -42,9 +42,17 @@ from rfdetr.engine import evaluate, train_one_epoch
 from rfdetr.models import build_model, build_criterion_and_postprocessors, PostProcess
 from rfdetr.util.benchmark import benchmark
 from rfdetr.util.drop_scheduler import drop_scheduler
-from rfdetr.util.files import download_file, validate_checkpoint, download_resume_checkpoint
+from rfdetr.util.checkpoint import download_resume_checkpoint
 from rfdetr.util.get_param_dicts import get_param_dict
 from rfdetr.util.utils import ModelEma, BestMetricHolder, clean_state_dict
+from rfdetr.training import (
+    download_pretrain_weights,
+    load_pretrain_checkpoint,
+    load_resume_checkpoint,
+    populate_args,
+    get_args_parser,
+    create_lr_scheduler,
+)
 
 if str(os.environ.get("USE_FILE_SYSTEM_SHARING", "False")).lower() in ["true", "1"]:
     import torch.multiprocessing
@@ -52,122 +60,28 @@ if str(os.environ.get("USE_FILE_SYSTEM_SHARING", "False")).lower() in ["true", "
 
 logger = getLogger(__name__)
 
-HOSTED_MODELS = {
-    "rf-detr-base.pth": "https://storage.googleapis.com/rfdetr/rf-detr-base-coco.pth",
-    "rf-detr-base-o365.pth": "https://storage.googleapis.com/rfdetr/top-secret-1234/lwdetr_dinov2_small_o365_checkpoint.pth",
-    # below is a less converged model that may be better for finetuning but worse for inference
-    "rf-detr-base-2.pth": "https://storage.googleapis.com/rfdetr/rf-detr-base-2.pth",
-    "rf-detr-large.pth": "https://storage.googleapis.com/rfdetr/rf-detr-large.pth",
-    "rf-detr-nano.pth": "https://storage.googleapis.com/rfdetr/nano_coco/checkpoint_best_regular.pth",
-    "rf-detr-small.pth": "https://storage.googleapis.com/rfdetr/small_coco/checkpoint_best_regular.pth",
-    "rf-detr-medium.pth": "https://storage.googleapis.com/rfdetr/medium_coco/checkpoint_best_regular.pth",
-    "rf-detr-seg-preview.pt": "https://storage.googleapis.com/rfdetr/rf-detr-seg-preview.pt",
-}
 
-def download_pretrain_weights(pretrain_weights: str, redownload=False, validate=True) -> bool:
+def main(**kwargs):
     """
-    Download pretrained weights if needed and validate the checkpoint.
+    Main training entry point.
     
-    Args:
-        pretrain_weights: Path to checkpoint file (can be filename or full path)
-        redownload: Force re-download even if file exists
-        validate: Validate checkpoint structure after download
-        
-    Returns:
-        True if checkpoint exists and is valid, False otherwise
+    Creates a Model instance and trains it with the provided configuration.
     """
-    if pretrain_weights is None:
-        return False
+    model = Model(**kwargs)
+    callbacks = {}
+    model.train(callbacks=callbacks, **kwargs)
+
+
+def distill(**kwargs):
+    """
+    Distillation training entry point.
     
-    # Resolve path to absolute path for consistent handling
-    if os.path.isabs(pretrain_weights):
-        checkpoint_path = pretrain_weights
-    else:
-        # Relative path - resolve relative to current working directory
-        checkpoint_path = os.path.abspath(pretrain_weights)
-    
-    # Check if checkpoint is in HOSTED_MODELS (downloadable)
-    is_hosted = pretrain_weights in HOSTED_MODELS or os.path.basename(pretrain_weights) in HOSTED_MODELS
-    
-    # If not hosted and file doesn't exist, can't download
-    if not is_hosted:
-        if os.path.exists(checkpoint_path):
-            # File exists locally, validate if requested
-            if validate:
-                is_valid, error_msg = validate_checkpoint(checkpoint_path, required_keys=['model'])
-                if not is_valid:
-                    logger.error(f"Checkpoint validation failed: {error_msg}")
-                    return False
-            return True
-        else:
-            logger.error(
-                f"Checkpoint not found and not in HOSTED_MODELS: {pretrain_weights}\n"
-                f"Available hosted models: {list(HOSTED_MODELS.keys())}"
-            )
-            return False
-    
-    # Determine the model name for HOSTED_MODELS lookup
-    model_name = pretrain_weights if pretrain_weights in HOSTED_MODELS else os.path.basename(pretrain_weights)
-    
-    # Check if file already exists and is valid
-    if os.path.exists(checkpoint_path) and not redownload:
-        if validate:
-            is_valid, error_msg = validate_checkpoint(checkpoint_path, required_keys=['model'])
-            if is_valid:
-                logger.info(f"Checkpoint already exists and is valid: {checkpoint_path}")
-                return True
-            else:
-                logger.warning(
-                    f"Existing checkpoint failed validation: {error_msg}\n"
-                    f"Will re-download..."
-                )
-                # Remove corrupted file
-                try:
-                    os.remove(checkpoint_path)
-                except Exception as e:
-                    logger.warning(f"Failed to remove corrupted checkpoint: {e}")
-        else:
-            logger.info(f"Checkpoint already exists: {checkpoint_path}")
-            return True
-    
-    # Download the checkpoint
-    url = HOSTED_MODELS[model_name]
-    logger.info(f"Downloading pretrained weights: {model_name} from {url}")
-    
-    # Ensure directory exists
-    checkpoint_dir = os.path.dirname(checkpoint_path)
-    if checkpoint_dir and not os.path.exists(checkpoint_dir):
-        try:
-            os.makedirs(checkpoint_dir, exist_ok=True)
-        except Exception as e:
-            logger.error(f"Failed to create checkpoint directory {checkpoint_dir}: {e}")
-            return False
-    
-    # Download file
-    download_success = download_file(url, checkpoint_path)
-    
-    if not download_success:
-        logger.error(f"Failed to download checkpoint: {pretrain_weights}")
-        return False
-    
-    # Validate downloaded checkpoint if requested
-    if validate:
-        is_valid, error_msg = validate_checkpoint(checkpoint_path, required_keys=['model'])
-        if not is_valid:
-            logger.error(
-                f"Downloaded checkpoint failed validation: {error_msg}\n"
-                f"This may indicate a corrupted download or server issue."
-            )
-            # Remove corrupted file
-            try:
-                os.remove(checkpoint_path)
-            except Exception as e:
-                logger.warning(f"Failed to remove corrupted checkpoint: {e}")
-            return False
-        else:
-            logger.info(f"Successfully downloaded and validated checkpoint: {checkpoint_path}")
-    
-    return True
+    Note: Distillation functionality may need to be implemented separately.
+    For now, this falls back to regular training.
+    """
+    logger.warning("Distillation mode not yet fully implemented, falling back to regular training")
+    main(**kwargs)
+
 
 class Model:
     def __init__(self, **kwargs):
@@ -188,6 +102,7 @@ class Model:
             
             if not checkpoint_available:
                 # Check if it's a custom path (not in HOSTED_MODELS)
+                from rfdetr.training.checkpoint import HOSTED_MODELS
                 checkpoint_name = os.path.basename(args.pretrain_weights)
                 if checkpoint_name not in HOSTED_MODELS and args.pretrain_weights not in HOSTED_MODELS:
                     raise FileNotFoundError(
@@ -217,144 +132,13 @@ class Model:
                             f"Please check your internet connection and try again, or manually download the checkpoint."
                         )
             
-            # Step 2: Load checkpoint (now guaranteed to exist and be valid)
-            logger.info(f"Loading pretrain weights from: {args.pretrain_weights}")
-            try:
-                checkpoint = torch.load(args.pretrain_weights, map_location='cpu', weights_only=False)
-            except Exception as e:
-                # This should rarely happen since we validated, but handle gracefully
-                logger.error(
-                    f"Failed to load checkpoint despite validation: {e}\n"
-                    f"The checkpoint file may have become corrupted after validation.\n"
-                    f"Attempting to re-download..."
-                )
-                # Try one more re-download
-                checkpoint_available = download_pretrain_weights(
-                    args.pretrain_weights, 
-                    redownload=True, 
-                    validate=True
-                )
-                if not checkpoint_available:
-                    raise RuntimeError(
-                        f"Failed to load checkpoint after re-download: {args.pretrain_weights}\n"
-                        f"Original error: {e}\n"
-                        f"Please check the checkpoint file manually or contact support."
-                    )
-                checkpoint = torch.load(args.pretrain_weights, map_location='cpu', weights_only=False)
-
+            # Step 2: Load checkpoint using the training module function
+            checkpoint = load_pretrain_checkpoint(args.pretrain_weights, self.model, args, logger)
+            
             # Extract class_names from checkpoint if available
             if 'args' in checkpoint and hasattr(checkpoint['args'], 'class_names'):
                 self.args.class_names = checkpoint['args'].class_names
                 self.class_names = checkpoint['args'].class_names
-            
-            # Issue 4 Fix: Handle missing 'args' key in checkpoint
-            # Checkpoints without 'args' cannot be validated, which could be dangerous
-            if 'args' not in checkpoint:
-                warning_msg = (
-                    f"Checkpoint '{args.pretrain_weights}' does not contain 'args' key. "
-                    f"Config validation cannot be performed. "
-                    f"This checkpoint may be from an older version or may be incompatible. "
-                    f"Consider re-saving the checkpoint with current version."
-                )
-                
-                if getattr(args, 'strict_checkpoint_validation', True):
-                    # Fail on missing args when strict validation is enabled (default)
-                    raise ValueError(
-                        warning_msg + "\n"
-                        "Set strict_checkpoint_validation=False to load anyway, "
-                        "but this may cause errors if configs are incompatible."
-                    )
-                else:
-                    # Warn but continue when strict validation is disabled
-                    logger.warning(warning_msg)
-            
-            # Validate checkpoint config compatibility with current config
-            # This accounts for transformations (e.g., num_classes increment) automatically
-            # Uses actual model num_classes from state_dict (source of truth) rather than args
-            # This fixes the root issue where checkpoint args.num_classes may not match the actual model
-            if 'args' in checkpoint:
-                from rfdetr.util.config_comparison import compare_configs
-                try:
-                    # Get current model state_dict for accurate comparison (model is already built)
-                    current_model_state_dict = self.model.state_dict() if hasattr(self, 'model') and self.model is not None else None
-                    
-                    is_compatible, differences, warnings = compare_configs(
-                        checkpoint['args'],
-                        args,
-                        checkpoint_model_state_dict=checkpoint['model'],
-                        current_model_state_dict=current_model_state_dict,
-                        critical_only=True
-                    )
-                    
-                    # Log differences and warnings
-                    if differences:
-                        logger.warning(
-                            f"Config differences detected between checkpoint and current config:\n"
-                            + "\n".join(f"  - {param}: checkpoint={vals['checkpoint']}, current={vals['current']}"
-                                      for param, vals in differences.items())
-                        )
-                    if warnings:
-                        for warning in warnings:
-                            if 'CRITICAL' in warning:
-                                logger.warning(warning)
-                            else:
-                                logger.info(warning)
-                    
-                    # Fail on critical mismatches if strict_checkpoint_validation is True
-                    if not is_compatible and getattr(args, 'strict_checkpoint_validation', True):
-                        critical_differences = {
-                            param: vals for param, vals in differences.items()
-                            if param in ['encoder', 'hidden_dim', 'sa_nheads', 'ca_nheads', 'dec_layers',
-                                        'dec_n_points', 'num_queries', 'group_detr', 'projector_scale',
-                                        'out_feature_indexes', 'num_classes_transformed']
-                        }
-                        error_msg = (
-                            f"CRITICAL: Checkpoint config is incompatible with current config.\n"
-                            f"Loading this checkpoint with mismatched architecture parameters will cause errors.\n\n"
-                            f"Critical mismatches:\n"
-                            + "\n".join(f"  - {param}: checkpoint={vals['checkpoint']}, current={vals['current']}"
-                                      for param, vals in critical_differences.items())
-                            + f"\n\nTo proceed anyway, set strict_checkpoint_validation=False when creating the Model.\n"
-                            f"However, this may cause runtime errors or incorrect model behavior."
-                        )
-                        raise ValueError(error_msg)
-                except ValueError:
-                    # Re-raise ValueError (our config mismatch error)
-                    raise
-                except Exception as e:
-                    # Don't fail loading if validation fails unexpectedly - just log
-                    logger.warning(f"Config comparison failed (non-fatal): {e}")
-                
-            checkpoint_num_classes = checkpoint['model']['class_embed.bias'].shape[0]
-            if checkpoint_num_classes != args.num_classes + 1:
-                self.reinitialize_detection_head(checkpoint_num_classes)
-            # add support to exclude_keys
-            # e.g., when load object365 pretrain, do not load `class_embed.[weight, bias]`
-            if args.pretrain_exclude_keys is not None:
-                assert isinstance(args.pretrain_exclude_keys, list)
-                for exclude_key in args.pretrain_exclude_keys:
-                    checkpoint['model'].pop(exclude_key)
-            if args.pretrain_keys_modify_to_load is not None:
-                from rfdetr.util.obj365_to_coco_model import get_coco_pretrain_from_obj365
-                assert isinstance(args.pretrain_keys_modify_to_load, list)
-                for modify_key_to_load in args.pretrain_keys_modify_to_load:
-                    try:
-                        checkpoint['model'][modify_key_to_load] = get_coco_pretrain_from_obj365(
-                            self.model.state_dict()[modify_key_to_load],
-                            checkpoint['model'][modify_key_to_load]
-                        )
-                    except Exception as e:
-                        logger.warning(f"Failed to load {modify_key_to_load}, deleting from checkpoint: {e}")
-                        checkpoint['model'].pop(modify_key_to_load)
-
-            # we may want to resume training with a smaller number of groups for group detr
-            num_desired_queries = args.num_queries * args.group_detr
-            query_param_names = ["refpoint_embed.weight", "query_feat.weight"]
-            for name, state in checkpoint['model'].items():
-                if any(name.endswith(x) for x in query_param_names):
-                    checkpoint['model'][name] = state[:num_desired_queries]
-
-            self.model.load_state_dict(checkpoint['model'], strict=False)
 
         if args.backbone_lora:
             print("Applying LORA to backbone")
@@ -429,26 +213,8 @@ class Model:
         dataset_val = build_dataset(image_set='val', args=args, resolution=args.resolution)
         dataset_test = build_dataset(image_set='test' if args.dataset_file == "roboflow" else "val", args=args, resolution=args.resolution)
 
-        # for cosine annealing, calculate total training steps and warmup steps
-        total_batch_size_for_lr = args.batch_size * utils.get_world_size() * args.grad_accum_steps
-        num_training_steps_per_epoch_lr = (len(dataset_train) + total_batch_size_for_lr - 1) // total_batch_size_for_lr
-        total_training_steps_lr = num_training_steps_per_epoch_lr * args.epochs
-        warmup_steps_lr = num_training_steps_per_epoch_lr * args.warmup_epochs
-        def lr_lambda(current_step: int):
-            if current_step < warmup_steps_lr:
-                # Linear warmup
-                return float(current_step) / float(max(1, warmup_steps_lr))
-            else:
-                # Cosine annealing from multiplier 1.0 down to lr_min_factor
-                if args.lr_scheduler == 'cosine':
-                    progress = float(current_step - warmup_steps_lr) / float(max(1, total_training_steps_lr - warmup_steps_lr))
-                    return args.lr_min_factor + (1 - args.lr_min_factor) * 0.5 * (1 + math.cos(math.pi * progress))
-                elif args.lr_scheduler == 'step':
-                    if current_step < args.lr_drop * num_training_steps_per_epoch_lr:
-                        return 1.0
-                    else:
-                        return 0.1
-        lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
+        # Create learning rate scheduler
+        lr_scheduler = create_lr_scheduler(optimizer, args, dataset_train)
 
         if args.distributed:
             sampler_train = DistributedSampler(dataset_train)
@@ -513,58 +279,9 @@ class Model:
                 del benchmark_model
         
         if args.resume:
-            logger.info(f"Resuming training from checkpoint: {args.resume}")
-            
-            # Step 1: Ensure checkpoint exists (download if URL, validate if local)
-            try:
-                resume_checkpoint_path = download_resume_checkpoint(args.resume, validate=True)
-            except (FileNotFoundError, RuntimeError) as e:
-                raise RuntimeError(
-                    f"Failed to prepare resume checkpoint: {e}\n"
-                    f"Please check:\n"
-                    f"  - Checkpoint path/URL is correct\n"
-                    f"  - Network connectivity (if using URL)\n"
-                    f"  - File permissions (if using local path)"
-                ) from e
-            
-            # Step 2: Load checkpoint (now guaranteed to exist and be valid)
-            try:
-                checkpoint = torch.load(resume_checkpoint_path, map_location='cpu', weights_only=False)
-            except Exception as e:
-                raise RuntimeError(
-                    f"Failed to load resume checkpoint despite validation: {e}\n"
-                    f"Checkpoint path: {resume_checkpoint_path}\n"
-                    f"The checkpoint file may have become corrupted after validation.\n"
-                    f"If using a URL, try re-downloading by removing the cached file."
-                ) from e
-            
-            # Step 3: Load model state
-            logger.info("Loading model state from checkpoint...")
-            model_without_ddp.load_state_dict(checkpoint['model'], strict=True)
-            
-            # Step 4: Load EMA model if applicable
-            if args.use_ema:
-                if 'ema_model' in checkpoint:
-                    logger.info("Loading EMA model state from checkpoint...")
-                    self.ema_m.module.load_state_dict(clean_state_dict(checkpoint['ema_model']))
-                else:
-                    logger.warning("EMA model not found in checkpoint, reinitializing EMA...")
-                    del self.ema_m
-                    self.ema_m = ModelEma(model, decay=args.ema_decay, tau=args.ema_tau)
-            
-            # Step 5: Load optimizer and scheduler state if available
-            if not args.eval and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
-                logger.info("Loading optimizer and scheduler state from checkpoint...")
-                optimizer.load_state_dict(checkpoint['optimizer'])
-                lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
-                args.start_epoch = checkpoint['epoch'] + 1
-                logger.info(f"Resuming from epoch {args.start_epoch}")
-            else:
-                if not args.eval:
-                    logger.warning(
-                        "Checkpoint missing optimizer/scheduler/epoch information. "
-                        "Starting from epoch 0."
-                    )
+            self.ema_m = load_resume_checkpoint(
+                args.resume, model_without_ddp, self.ema_m, optimizer, lr_scheduler, args, logger
+            )
 
         if args.eval:
             test_stats, coco_evaluator = evaluate(
@@ -945,437 +662,3 @@ if __name__ == '__main__':
             print(f"Only batch_size 1 is supported for onnx export, \
                  but got batchsize = {args.batch_size}. batch_size is forcibly set to 1.")
         export_main(**config)
-
-def get_args_parser():
-    parser = argparse.ArgumentParser('Set transformer detector', add_help=False)
-    parser.add_argument('--num_classes', default=2, type=int)
-    parser.add_argument('--grad_accum_steps', default=1, type=int)
-    parser.add_argument('--amp', default=False, type=bool)
-    parser.add_argument('--lr', default=1e-4, type=float)
-    parser.add_argument('--lr_encoder', default=1.5e-4, type=float)
-    parser.add_argument('--batch_size', default=2, type=int)
-    parser.add_argument('--weight_decay', default=1e-4, type=float)
-    parser.add_argument('--epochs', default=12, type=int)
-    parser.add_argument('--lr_drop', default=11, type=int)
-    parser.add_argument('--clip_max_norm', default=0.1, type=float,
-                        help='gradient clipping max norm')
-    parser.add_argument('--lr_vit_layer_decay', default=0.8, type=float)
-    parser.add_argument('--lr_component_decay', default=1.0, type=float)
-    parser.add_argument('--do_benchmark', action='store_true', help='benchmark the model')
-
-    # drop args 
-    # dropout and stochastic depth drop rate; set at most one to non-zero
-    parser.add_argument('--dropout', type=float, default=0,
-                        help='Drop path rate (default: 0.0)')
-    parser.add_argument('--drop_path', type=float, default=0,
-                        help='Drop path rate (default: 0.0)')
-
-    # early / late dropout and stochastic depth settings
-    parser.add_argument('--drop_mode', type=str, default='standard',
-                        choices=['standard', 'early', 'late'], help='drop mode')
-    parser.add_argument('--drop_schedule', type=str, default='constant',
-                        choices=['constant', 'linear'],
-                        help='drop schedule for early dropout / s.d. only')
-    parser.add_argument('--cutoff_epoch', type=int, default=0,
-                        help='if drop_mode is early / late, this is the epoch where dropout ends / starts')
-
-    # Model parameters
-    parser.add_argument('--pretrained_encoder', type=str, default=None, 
-                        help="Path to the pretrained encoder.")
-    parser.add_argument('--pretrain_weights', type=str, default=None, 
-                        help="Path to the pretrained model.")
-    parser.add_argument('--pretrain_exclude_keys', type=str, default=None, nargs='+', 
-                        help="Keys you do not want to load.")
-    parser.add_argument('--pretrain_keys_modify_to_load', type=str, default=None, nargs='+',
-                        help="Keys you want to modify to load. Only used when loading objects365 pre-trained weights.")
-    parser.add_argument('--strict_checkpoint_validation', type=ast.literal_eval, default=True, nargs='?', const=True,
-                        help="If True (default), fail on critical config mismatches when loading checkpoints. "
-                             "Set to False to allow loading checkpoints with mismatched configs (may cause errors).")
-
-    # * Backbone
-    parser.add_argument('--encoder', default='vit_tiny', type=str,
-                        help="Name of the transformer or convolutional encoder to use")
-    parser.add_argument('--vit_encoder_num_layers', default=12, type=int,
-                        help="Number of layers used in ViT encoder")
-    parser.add_argument('--window_block_indexes', default=None, type=int, nargs='+')
-    parser.add_argument('--position_embedding', default='sine', type=str, 
-                        choices=('sine', 'learned'),
-                        help="Type of positional embedding to use on top of the image features")
-    parser.add_argument('--out_feature_indexes', default=[-1], type=int, nargs='+', help='only for vit now')
-    parser.add_argument("--freeze_encoder", action="store_true", dest="freeze_encoder")
-    parser.add_argument("--layer_norm", action="store_true", dest="layer_norm")
-    parser.add_argument("--rms_norm", action="store_true", dest="rms_norm")
-    parser.add_argument("--backbone_lora", action="store_true", dest="backbone_lora")
-    parser.add_argument("--force_no_pretrain", action="store_true", dest="force_no_pretrain")
-
-    # * Transformer
-    parser.add_argument('--dec_layers', default=3, type=int,
-                        help="Number of decoding layers in the transformer")
-    parser.add_argument('--dim_feedforward', default=2048, type=int,
-                        help="Intermediate size of the feedforward layers in the transformer blocks")
-    parser.add_argument('--hidden_dim', default=256, type=int,
-                        help="Size of the embeddings (dimension of the transformer)")
-    parser.add_argument('--sa_nheads', default=8, type=int,
-                        help="Number of attention heads inside the transformer's self-attentions")
-    parser.add_argument('--ca_nheads', default=8, type=int,
-                        help="Number of attention heads inside the transformer's cross-attentions")
-    parser.add_argument('--num_queries', default=300, type=int,
-                        help="Number of query slots")
-    parser.add_argument('--group_detr', default=13, type=int,
-                        help="Number of groups to speed up detr training")
-    parser.add_argument('--two_stage', action='store_true')
-    parser.add_argument('--projector_scale', default='P4', type=str, nargs='+', choices=('P3', 'P4', 'P5', 'P6'))
-    parser.add_argument('--lite_refpoint_refine', action='store_true', help='lite refpoint refine mode for speed-up')
-    parser.add_argument('--num_select', default=100, type=int,
-                        help='the number of predictions selected for evaluation')
-    parser.add_argument('--dec_n_points', default=4, type=int,
-                        help='the number of sampling points')
-    parser.add_argument('--decoder_norm', default='LN', type=str)
-    parser.add_argument('--bbox_reparam', action='store_true')
-    parser.add_argument('--freeze_batch_norm', action='store_true')
-    # * Matcher
-    parser.add_argument('--set_cost_class', default=2, type=float,
-                        help="Class coefficient in the matching cost")
-    parser.add_argument('--set_cost_bbox', default=5, type=float,
-                        help="L1 box coefficient in the matching cost")
-    parser.add_argument('--set_cost_giou', default=2, type=float,
-                        help="giou box coefficient in the matching cost")
-
-    # * Loss coefficients
-    parser.add_argument('--cls_loss_coef', default=2, type=float)
-    parser.add_argument('--bbox_loss_coef', default=5, type=float)
-    parser.add_argument('--giou_loss_coef', default=2, type=float)
-    parser.add_argument('--focal_alpha', default=0.25, type=float)
-    
-    # Loss
-    parser.add_argument('--no_aux_loss', dest='aux_loss', action='store_false',
-                        help="Disables auxiliary decoding losses (loss at each layer)")
-    parser.add_argument('--sum_group_losses', action='store_true',
-                        help="To sum losses across groups or mean losses.")
-    parser.add_argument('--use_varifocal_loss', action='store_true')
-    parser.add_argument('--use_position_supervised_loss', action='store_true')
-    parser.add_argument('--ia_bce_loss', action='store_true')
-
-    # dataset parameters
-    parser.add_argument('--dataset_file', default='coco')
-    parser.add_argument('--coco_path', type=str)
-    parser.add_argument('--dataset_dir', type=str)
-    parser.add_argument('--square_resize_div_64', action='store_true')
-
-    parser.add_argument('--output_dir', default='output',
-                        help='path where to save, empty for no saving')
-    parser.add_argument('--dont_save_weights', action='store_true')
-    parser.add_argument('--checkpoint_interval', default=10, type=int,
-                        help='epoch interval to save checkpoint')
-    parser.add_argument('--seed', default=42, type=int)
-    parser.add_argument('--resume', default='', help='resume from checkpoint')
-    parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
-                        help='start epoch')
-    parser.add_argument('--eval', action='store_true')
-    parser.add_argument('--use_ema', action='store_true')
-    parser.add_argument('--ema_decay', default=0.9997, type=float)
-    parser.add_argument('--ema_tau', default=0, type=float)
-
-    parser.add_argument('--num_workers', default=2, type=int)
-
-    # distributed training parameters
-    parser.add_argument('--device', default='cuda',
-                        help='device to use for training / testing')
-    parser.add_argument('--world_size', default=1, type=int,
-                        help='number of distributed processes')
-    parser.add_argument('--dist_url', default='env://', 
-                        help='url used to set up distributed training')
-    parser.add_argument('--sync_bn', default=True, type=bool,
-                        help='setup synchronized BatchNorm for distributed training')
-    
-    # fp16
-    parser.add_argument('--fp16_eval', default=False, action='store_true',
-                        help='evaluate in fp16 precision.')
-
-    # custom args
-    parser.add_argument('--encoder_only', action='store_true', help='Export and benchmark encoder only')
-    parser.add_argument('--backbone_only', action='store_true', help='Export and benchmark backbone only')
-    parser.add_argument('--resolution', type=int, default=560, help="input resolution")
-    parser.add_argument('--use_cls_token', action='store_true', help='use cls token')
-    parser.add_argument('--multi_scale', action='store_true', help='use multi scale')
-    parser.add_argument('--expanded_scales', action='store_true', help='use expanded scales')
-    parser.add_argument('--do_random_resize_via_padding', action='store_true', help='use random resize via padding')
-    parser.add_argument('--warmup_epochs', default=1, type=float, 
-        help='Number of warmup epochs for linear warmup before cosine annealing')
-    # Add scheduler type argument: 'step' or 'cosine'
-    parser.add_argument(
-        '--lr_scheduler',
-        default='step',
-        choices=['step', 'cosine'],
-        help="Type of learning rate scheduler to use: 'step' (default) or 'cosine'"
-    )
-    parser.add_argument('--lr_min_factor', default=0.0, type=float, 
-        help='Minimum learning rate factor (as a fraction of initial lr) at the end of cosine annealing')
-    # Early stopping parameters
-    parser.add_argument('--early_stopping', action='store_true',
-                        help='Enable early stopping based on mAP improvement')
-    parser.add_argument('--early_stopping_patience', default=10, type=int,
-                        help='Number of epochs with no improvement after which training will be stopped')
-    parser.add_argument('--early_stopping_min_delta', default=0.001, type=float,
-                        help='Minimum change in mAP to qualify as an improvement')
-    parser.add_argument('--early_stopping_use_ema', action='store_true',
-                        help='Use EMA model metrics for early stopping')
-    # subparsers
-    subparsers = parser.add_subparsers(title='sub-commands', dest='subcommand',
-        description='valid subcommands', help='additional help')
-
-    # subparser for export model
-    parser_export = subparsers.add_parser('export_model', help='LWDETR model export')
-    parser_export.add_argument('--infer_dir', type=str, default=None)
-    parser_export.add_argument('--verbose', type=ast.literal_eval, default=False, nargs="?", const=True)
-    parser_export.add_argument('--opset_version', type=int, default=17)
-    parser_export.add_argument('--simplify', action='store_true', help="Simplify onnx model")
-    parser_export.add_argument('--tensorrt', '--trtexec', '--trt', action='store_true',
-                               help="build tensorrt engine")
-    parser_export.add_argument('--dry-run', '--test', '-t', action='store_true', help="just print command")
-    parser_export.add_argument('--profile', action='store_true', help='Run nsys profiling during TensorRT export')
-    parser_export.add_argument('--shape', type=int, nargs=2, default=(640, 640), help="input shape (width, height)")
-    return parser
-
-def populate_args(
-    # Basic training parameters
-    num_classes=2,
-    grad_accum_steps=1,
-    amp=False,
-    lr=1e-4,
-    lr_encoder=1.5e-4,
-    batch_size=2,
-    weight_decay=1e-4,
-    epochs=12,
-    lr_drop=11,
-    clip_max_norm=0.1,
-    lr_vit_layer_decay=0.8,
-    lr_component_decay=1.0,
-    do_benchmark=False,
-    
-    # Drop parameters
-    dropout=0,
-    drop_path=0,
-    drop_mode='standard',
-    drop_schedule='constant',
-    cutoff_epoch=0,
-    
-    # Model parameters
-    pretrained_encoder=None,
-    pretrain_weights=None, 
-    pretrain_exclude_keys=None,
-    pretrain_keys_modify_to_load=None,
-    pretrained_distiller=None,
-    strict_checkpoint_validation=True,  # If True, fail on critical config mismatches
-    
-    # Backbone parameters
-    encoder='dinov2_windowed_small',  # Base model default (was 'vit_tiny', fixed to match RFDETRBaseConfig)
-    vit_encoder_num_layers=12,
-    window_block_indexes=None,
-    position_embedding='sine',
-    out_feature_indexes=[2, 5, 8, 11],  # Base model default (was [-1], fixed to match RFDETRBaseConfig)
-    freeze_encoder=False,
-    layer_norm=True,  # Base model default (was False, fixed to match ModelConfig)
-    rms_norm=False,
-    backbone_lora=False,
-    force_no_pretrain=False,
-    patch_size=14,  # Base model default (matches RFDETRBaseConfig)
-    num_windows=4,  # Base model default (matches RFDETRBaseConfig)
-    positional_encoding_size=37,  # Base model default (matches RFDETRBaseConfig)
-    segmentation_head=False,  # Default to False (matches ModelConfig)
-    mask_downsample_ratio=4,  # Default value (matches ModelConfig)
-    
-    # Transformer parameters
-    dec_layers=3,
-    dim_feedforward=2048,
-    hidden_dim=256,
-    sa_nheads=8,
-    ca_nheads=16,  # Base model default (was 8, fixed to match RFDETRBaseConfig)
-    num_queries=300,
-    group_detr=13,
-    two_stage=True,  # Base model default (was False, fixed to match ModelConfig)
-    projector_scale=['P4'],  # Base model default (was 'P4', fixed to match RFDETRBaseConfig - must be list)
-    lite_refpoint_refine=True,  # Base model default (was False, fixed to match ModelConfig)
-    num_select=300,  # Base model default (was 100, fixed to match RFDETRBaseConfig)
-    dec_n_points=2,  # Base model default (was 4, fixed to match RFDETRBaseConfig)
-    decoder_norm='LN',
-    bbox_reparam=True,  # Base model default (was False, fixed to match ModelConfig)
-    freeze_batch_norm=False,
-    # NEW: Encoder parameters for improved architecture
-    num_encoder_layers=0,
-    enc_n_points=4,
-    use_cross_scale_fusion=False,
-    
-    # Matcher parameters
-    set_cost_class=2,
-    set_cost_bbox=5,
-    set_cost_giou=2,
-    
-    # Loss coefficients
-    cls_loss_coef=2,
-    bbox_loss_coef=5,
-    giou_loss_coef=2,
-    focal_alpha=0.25,
-    aux_loss=True,
-    sum_group_losses=False,
-    use_varifocal_loss=False,
-    use_position_supervised_loss=False,
-    ia_bce_loss=False,
-    
-    # Dataset parameters
-    dataset_file='coco',
-    coco_path=None,
-    dataset_dir=None,
-    square_resize_div_64=False,
-    
-    # Output parameters
-    output_dir='output',
-    dont_save_weights=False,
-    checkpoint_interval=10,
-    seed=42,
-    resume='',
-    start_epoch=0,
-    eval=False,
-    use_ema=False,
-    ema_decay=0.9997,
-    ema_tau=0,
-    num_workers=2,
-    
-    # Distributed training parameters
-    device='cuda',
-    world_size=1,
-    dist_url='env://',
-    sync_bn=True,
-    
-    # FP16
-    fp16_eval=False,
-    
-    # Custom args
-    encoder_only=False,
-    backbone_only=False,
-    resolution=560,  # Base model default (was 640, fixed to match RFDETRBaseConfig)
-    use_cls_token=False,
-    multi_scale=False,
-    expanded_scales=False,
-    do_random_resize_via_padding=False,
-    warmup_epochs=1,
-    lr_scheduler='step',
-    lr_min_factor=0.0,
-    # Early stopping parameters
-    early_stopping=False,  # Default to False to match CLI and TrainConfig defaults
-    early_stopping_patience=10,
-    early_stopping_min_delta=0.001,
-    early_stopping_use_ema=False,
-    gradient_checkpointing=False,
-    # Additional
-    subcommand=None,
-    **extra_kwargs  # To handle any unexpected arguments
-):
-    args = argparse.Namespace(
-        num_classes=num_classes,
-        grad_accum_steps=grad_accum_steps,
-        amp=amp,
-        lr=lr,
-        lr_encoder=lr_encoder,
-        batch_size=batch_size,
-        weight_decay=weight_decay,
-        epochs=epochs,
-        lr_drop=lr_drop,
-        clip_max_norm=clip_max_norm,
-        lr_vit_layer_decay=lr_vit_layer_decay,
-        lr_component_decay=lr_component_decay,
-        do_benchmark=do_benchmark,
-        dropout=dropout,
-        drop_path=drop_path,
-        drop_mode=drop_mode,
-        drop_schedule=drop_schedule,
-        cutoff_epoch=cutoff_epoch,
-        pretrained_encoder=pretrained_encoder,
-        pretrain_weights=pretrain_weights,
-        pretrain_exclude_keys=pretrain_exclude_keys,
-        pretrain_keys_modify_to_load=pretrain_keys_modify_to_load,
-        pretrained_distiller=pretrained_distiller,
-        strict_checkpoint_validation=strict_checkpoint_validation,
-        encoder=encoder,
-        vit_encoder_num_layers=vit_encoder_num_layers,
-        window_block_indexes=window_block_indexes,
-        position_embedding=position_embedding,
-        out_feature_indexes=out_feature_indexes,
-        freeze_encoder=freeze_encoder,
-        layer_norm=layer_norm,
-        rms_norm=rms_norm,
-        backbone_lora=backbone_lora,
-        force_no_pretrain=force_no_pretrain,
-        patch_size=patch_size,
-        num_windows=num_windows,
-        positional_encoding_size=positional_encoding_size,
-        segmentation_head=segmentation_head,
-        mask_downsample_ratio=mask_downsample_ratio,
-        dec_layers=dec_layers,
-        dim_feedforward=dim_feedforward,
-        hidden_dim=hidden_dim,
-        sa_nheads=sa_nheads,
-        ca_nheads=ca_nheads,
-        num_queries=num_queries,
-        group_detr=group_detr,
-        two_stage=two_stage,
-        projector_scale=projector_scale,
-        lite_refpoint_refine=lite_refpoint_refine,
-        num_select=num_select,
-        dec_n_points=dec_n_points,
-        decoder_norm=decoder_norm,
-        bbox_reparam=bbox_reparam,
-        freeze_batch_norm=freeze_batch_norm,
-        num_encoder_layers=num_encoder_layers,
-        enc_n_points=enc_n_points,
-        use_cross_scale_fusion=use_cross_scale_fusion,
-        set_cost_class=set_cost_class,
-        set_cost_bbox=set_cost_bbox,
-        set_cost_giou=set_cost_giou,
-        cls_loss_coef=cls_loss_coef,
-        bbox_loss_coef=bbox_loss_coef,
-        giou_loss_coef=giou_loss_coef,
-        focal_alpha=focal_alpha,
-        aux_loss=aux_loss,
-        sum_group_losses=sum_group_losses,
-        use_varifocal_loss=use_varifocal_loss,
-        use_position_supervised_loss=use_position_supervised_loss,
-        ia_bce_loss=ia_bce_loss,
-        dataset_file=dataset_file,
-        coco_path=coco_path,
-        dataset_dir=dataset_dir,
-        square_resize_div_64=square_resize_div_64,
-        output_dir=output_dir,
-        dont_save_weights=dont_save_weights,
-        checkpoint_interval=checkpoint_interval,
-        seed=seed,
-        resume=resume,
-        start_epoch=start_epoch,
-        eval=eval,
-        use_ema=use_ema,
-        ema_decay=ema_decay,
-        ema_tau=ema_tau,
-        num_workers=num_workers,
-        device=device,
-        world_size=world_size,
-        dist_url=dist_url,
-        sync_bn=sync_bn,
-        fp16_eval=fp16_eval,
-        encoder_only=encoder_only,
-        backbone_only=backbone_only,
-        resolution=resolution,
-        use_cls_token=use_cls_token,
-        multi_scale=multi_scale,
-        expanded_scales=expanded_scales,
-        do_random_resize_via_padding=do_random_resize_via_padding,
-        warmup_epochs=warmup_epochs,
-        lr_scheduler=lr_scheduler,
-        lr_min_factor=lr_min_factor,
-        early_stopping=early_stopping,
-        early_stopping_patience=early_stopping_patience,
-        early_stopping_min_delta=early_stopping_min_delta,
-        early_stopping_use_ema=early_stopping_use_ema,
-        gradient_checkpointing=gradient_checkpointing,
-        **extra_kwargs
-    )
-    return args

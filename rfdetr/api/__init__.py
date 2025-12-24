@@ -4,13 +4,8 @@
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]
 # ------------------------------------------------------------------------
 
-"""
-Public API module - re-exports from api submodule for backward compatibility.
-"""
-
-# Public API - re-export from api module for backward compatibility
-from rfdetr.api import (
-    RFDETR,
+from rfdetr.api.base import RFDETR
+from rfdetr.api.models import (
     RFDETRBase,
     RFDETRLarge,
     RFDETRNano,
@@ -28,3 +23,4 @@ __all__ = [
     "RFDETRMedium",
     "RFDETRSegPreview",
 ]
+
