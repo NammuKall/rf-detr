@@ -10,7 +10,6 @@ from collections import defaultdict
 from logging import getLogger
 from typing import Union, List
 
-from typing import Union, List
 
 import numpy as np
 import supervision as sv

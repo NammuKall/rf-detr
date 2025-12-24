@@ -50,7 +50,7 @@ def convert_coco_poly_to_mask(segmentations, height, width):
             continue
         try:
             rles = coco_mask.frPyObjects(polygons, height, width)
-        except:
+        except Exception:
             rles = polygons
         mask = coco_mask.decode(rles)
         if mask.ndim < 3:
@@ -240,22 +240,13 @@ def build(image_set, args, resolution):
     PATHS = {
         "train": (root / "train2017", root / "annotations" / f'{mode}_train2017.json'),
         "val": (root /  "val2017", root / "annotations" / f'{mode}_val2017.json'),
-        "test": (root / "test2017", root / "annotations" / f'image_info_test-dev2017.json'),
+        "test": (root / "test2017", root / "annotations" / 'image_info_test-dev2017.json'),
     }
     
     img_folder, ann_file = PATHS[image_set.split("_")[0]]
     
-    try:
-        square_resize = args.square_resize
-    except:
-        square_resize = False
-    
-    try:
-        square_resize_div_64 = args.square_resize_div_64
-    except:
-        square_resize_div_64 = False
+    square_resize_div_64 = getattr(args, 'square_resize_div_64', False)
 
-    
     if square_resize_div_64:
         dataset = CocoDetection(img_folder, ann_file, transforms=make_coco_transforms_square_div_64(
             image_set,
@@ -281,7 +272,6 @@ def build(image_set, args, resolution):
 def build_roboflow(image_set, args, resolution):
     root = Path(args.dataset_dir)
     assert root.exists(), f'provided Roboflow path {root} does not exist'
-    mode = 'instances'
     PATHS = {
         "train": (root / "train", root / "train" / "_annotations.coco.json"),
         "val": (root /  "valid", root / "valid" / "_annotations.coco.json"),
@@ -290,22 +280,9 @@ def build_roboflow(image_set, args, resolution):
     
     img_folder, ann_file = PATHS[image_set.split("_")[0]]
     
-    try:
-        square_resize = args.square_resize
-    except:
-        square_resize = False
-    
-    try:
-        square_resize_div_64 = args.square_resize_div_64
-    except:
-        square_resize_div_64 = False
-    
-    try:
-        include_masks = args.segmentation_head
-    except:
-        include_masks = False
+    square_resize_div_64 = getattr(args, 'square_resize_div_64', False)
+    include_masks = getattr(args, 'segmentation_head', False)
 
-    
     if square_resize_div_64:
         dataset = CocoDetection(img_folder, ann_file, transforms=make_coco_transforms_square_div_64(
             image_set,
