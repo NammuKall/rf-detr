@@ -12,9 +12,10 @@ from typing import Callable
 import torch
 from torch import nn
 
-from rfdetr.util.misc import NestedTensor
-from rfdetr.models.position_encoding import build_position_encoding
 from rfdetr.models.backbone.backbone import Backbone
+from rfdetr.models.position_encoding import build_position_encoding
+from rfdetr.util.misc import NestedTensor
+
 
 class Joiner(nn.Sequential):
     def __init__(self, backbone, position_embedding):
@@ -33,13 +34,8 @@ class Joiner(nn.Sequential):
         self._export = True
         self._forward_origin = self.forward
         self.forward = self.forward_export
-        for name, m in self.named_modules():
-            if (
-                hasattr(m, "export")
-                and isinstance(m.export, Callable)
-                and hasattr(m, "_export")
-                and not m._export
-            ):
+        for _name, m in self.named_modules():
+            if hasattr(m, "export") and isinstance(m.export, Callable) and hasattr(m, "_export") and not m._export:
                 m.export()
 
     def forward_export(self, inputs: torch.Tensor):

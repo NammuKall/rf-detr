@@ -8,10 +8,10 @@ from rfdetr.api.base import RFDETR
 from rfdetr.api.models import (
     RFDETRBase,
     RFDETRLarge,
-    RFDETRNano,
-    RFDETRSmall,
     RFDETRMedium,
+    RFDETRNano,
     RFDETRSegPreview,
+    RFDETRSmall,
 )
 
 __all__ = [
@@ -23,4 +23,3 @@ __all__ = [
     "RFDETRMedium",
     "RFDETRSegPreview",
 ]
-

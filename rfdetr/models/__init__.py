@@ -13,6 +13,6 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 # ------------------------------------------------------------------------
 
-from .lwdetr import build_model, build_criterion_and_postprocessors, PostProcess
+from .lwdetr import PostProcess, build_criterion_and_postprocessors, build_model
 
 __all__ = ["build_model", "build_criterion_and_postprocessors", "PostProcess"]
