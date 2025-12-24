@@ -247,6 +247,27 @@ class Model:
                 self.args.class_names = checkpoint['args'].class_names
                 self.class_names = checkpoint['args'].class_names
             
+            # Issue 4 Fix: Handle missing 'args' key in checkpoint
+            # Checkpoints without 'args' cannot be validated, which could be dangerous
+            if 'args' not in checkpoint:
+                warning_msg = (
+                    f"Checkpoint '{args.pretrain_weights}' does not contain 'args' key. "
+                    f"Config validation cannot be performed. "
+                    f"This checkpoint may be from an older version or may be incompatible. "
+                    f"Consider re-saving the checkpoint with current version."
+                )
+                
+                if getattr(args, 'strict_checkpoint_validation', True):
+                    # Fail on missing args when strict validation is enabled (default)
+                    raise ValueError(
+                        warning_msg + "\n"
+                        "Set strict_checkpoint_validation=False to load anyway, "
+                        "but this may cause errors if configs are incompatible."
+                    )
+                else:
+                    # Warn but continue when strict validation is disabled
+                    logger.warning(warning_msg)
+            
             # Validate checkpoint config compatibility with current config
             # This accounts for transformations (e.g., num_classes increment) automatically
             # Uses actual model num_classes from state_dict (source of truth) rather than args
@@ -967,6 +988,9 @@ def get_args_parser():
                         help="Keys you do not want to load.")
     parser.add_argument('--pretrain_keys_modify_to_load', type=str, default=None, nargs='+',
                         help="Keys you want to modify to load. Only used when loading objects365 pre-trained weights.")
+    parser.add_argument('--strict_checkpoint_validation', type=ast.literal_eval, default=True, nargs='?', const=True,
+                        help="If True (default), fail on critical config mismatches when loading checkpoints. "
+                             "Set to False to allow loading checkpoints with mismatched configs (may cause errors).")
 
     # * Backbone
     parser.add_argument('--encoder', default='vit_tiny', type=str,
@@ -1071,7 +1095,7 @@ def get_args_parser():
     # custom args
     parser.add_argument('--encoder_only', action='store_true', help='Export and benchmark encoder only')
     parser.add_argument('--backbone_only', action='store_true', help='Export and benchmark backbone only')
-    parser.add_argument('--resolution', type=int, default=640, help="input resolution")
+    parser.add_argument('--resolution', type=int, default=560, help="input resolution")
     parser.add_argument('--use_cls_token', action='store_true', help='use cls token')
     parser.add_argument('--multi_scale', action='store_true', help='use multi scale')
     parser.add_argument('--expanded_scales', action='store_true', help='use expanded scales')
@@ -1238,7 +1262,7 @@ def populate_args(
     lr_scheduler='step',
     lr_min_factor=0.0,
     # Early stopping parameters
-    early_stopping=True,
+    early_stopping=False,  # Default to False to match CLI and TrainConfig defaults
     early_stopping_patience=10,
     early_stopping_min_delta=0.001,
     early_stopping_use_ema=False,

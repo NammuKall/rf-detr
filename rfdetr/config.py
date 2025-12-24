@@ -38,10 +38,14 @@ class ModelConfig(BaseModel):
     segmentation_head: bool = False
     mask_downsample_ratio: int = 4
     # NEW: Encoder layers to refine backbone features
-    num_encoder_layers: int = 2
+    # Default to 0 (disabled) for compatibility with pretrained weights
+    # Validators will override to 2/3 when use_improvements=True
+    num_encoder_layers: int = 0
     enc_n_points: int = 4
     # NEW: Cross-scale fusion
-    use_cross_scale_fusion: bool = True
+    # Default to False (disabled) for compatibility with pretrained weights
+    # Validators will override to True when use_improvements=True
+    use_cross_scale_fusion: bool = False
 
 
 class RFDETRBaseConfig(ModelConfig):
@@ -83,6 +87,135 @@ class RFDETRBaseConfig(ModelConfig):
     pretrain_weights: Optional[str] = "rf-detr-base.pth"
     resolution: int = 560
     positional_encoding_size: int = 37
+    
+    @classmethod
+    def _get_required_fields(cls):
+        """Get list of required fields from ModelConfig base class.
+        
+        Returns a list of field names that don't have defaults in ModelConfig.
+        These fields must be provided when creating a config instance.
+        """
+        # Required fields from ModelConfig (those without defaults)
+        model_config_required = [
+            'encoder',
+            'out_feature_indexes',
+            'dec_layers',
+            'projector_scale',
+            'hidden_dim',
+            'patch_size',
+            'num_windows',
+            'sa_nheads',
+            'ca_nheads',
+            'dec_n_points',
+            'resolution',
+            'positional_encoding_size',
+        ]
+        
+        # Check which of these are actually required (don't have defaults in this class)
+        required_fields = []
+        for field_name in model_config_required:
+            # Check if field has a default in this class or any parent class
+            has_default = False
+            for parent in cls.__mro__:
+                if hasattr(parent, 'model_fields') and parent.model_fields:
+                    field_info = parent.model_fields.get(field_name)
+                    if field_info is not None:
+                        # Check if field has a default value
+                        if hasattr(field_info, 'default') and field_info.default is not None:
+                            has_default = True
+                            break
+                        if hasattr(field_info, 'default_factory') and field_info.default_factory is not None:
+                            has_default = True
+                            break
+                # Also check class attributes as fallback
+                if hasattr(parent, field_name):
+                    default_value = getattr(parent, field_name, None)
+                    if default_value is not None:
+                        has_default = True
+                        break
+            
+            if not has_default:
+                required_fields.append(field_name)
+        
+        return required_fields
+    
+    @model_validator(mode='before')
+    @classmethod
+    def validate_required_fields_before(cls, data):
+        """Validate that all required fields are present before model creation.
+        
+        This validator runs before Pydantic's built-in validation to provide
+        clearer error messages for missing required fields.
+        """
+        # Ensure data is a dict (handle None, empty dict, or other types)
+        if not isinstance(data, dict):
+            data = {} if data is None else dict(data)
+        
+        # Get required fields for this config class
+        required_fields = cls._get_required_fields()
+        
+        # Check for missing required fields
+        missing_fields = []
+        invalid_fields = []
+        
+        # Fields that cannot be empty lists (even if they have defaults)
+        list_fields_that_cannot_be_empty = ['out_feature_indexes', 'projector_scale']
+        
+        for field_name in required_fields:
+            if field_name not in data:
+                # Check if field has a default in the class hierarchy
+                has_default = False
+                for parent in cls.__mro__:
+                    if hasattr(parent, 'model_fields') and parent.model_fields:
+                        field_info = parent.model_fields.get(field_name)
+                        if field_info is not None:
+                            if hasattr(field_info, 'default') and field_info.default is not None:
+                                has_default = True
+                                break
+                            if hasattr(field_info, 'default_factory') and field_info.default_factory is not None:
+                                has_default = True
+                                break
+                    elif hasattr(parent, field_name):
+                        default_value = getattr(parent, field_name, None)
+                        if default_value is not None:
+                            has_default = True
+                            break
+                
+                if not has_default:
+                    missing_fields.append(field_name)
+            else:
+                # Field is present, validate it's not None or empty
+                value = data[field_name]
+                if value is None:
+                    invalid_fields.append(f"{field_name} cannot be None")
+                elif field_name in list_fields_that_cannot_be_empty and isinstance(value, list) and len(value) == 0:
+                    invalid_fields.append(f"{field_name} cannot be an empty list")
+        
+        # Also check for empty lists in fields that are provided, even if they're not required
+        # (because empty lists are always invalid, regardless of whether field is required)
+        for field_name in list_fields_that_cannot_be_empty:
+            if field_name in data:
+                value = data[field_name]
+                if isinstance(value, list) and len(value) == 0:
+                    invalid_fields.append(f"{field_name} cannot be an empty list")
+        
+        # Collect all errors
+        errors = []
+        if missing_fields:
+            errors.append(
+                f"Missing required fields for {cls.__name__}: {', '.join(missing_fields)}. "
+                f"These fields must be provided when creating a config instance. "
+                f"Consider using a predefined config class (e.g., RFDETRBaseConfig) "
+                f"or providing all required fields explicitly."
+            )
+        if invalid_fields:
+            errors.extend(invalid_fields)
+        
+        if errors:
+            error_msg = "Config validation failed (required fields):\n  " + "\n  ".join(errors)
+            raise ValueError(error_msg)
+        
+        return data
     
     @model_validator(mode='before')
     @classmethod
@@ -167,15 +300,55 @@ class RFDETRBaseConfig(ModelConfig):
         """Comprehensive validation of config values after validator execution.
         
         Validates:
-        1. Improved/original value consistency based on use_improvements flag
-        2. Critical value ranges
-        3. Field consistency (e.g., ca_nheads >= sa_nheads, hidden_dim divisibility)
-        4. Encoder/cross-scale fusion settings consistency
+        1. Required fields are present and valid
+        2. Improved/original value consistency based on use_improvements flag
+        3. Critical value ranges
+        4. Field consistency (e.g., ca_nheads >= sa_nheads, hidden_dim divisibility)
+        5. Encoder/cross-scale fusion settings consistency
         
         This validator uses dynamic class-based values instead of hardcoded ones,
         making it work correctly for all config subclasses.
         """
         errors = []
+        
+        # 0. Validate required fields are present and valid (double-check after Pydantic validation)
+        required_fields = self._get_required_fields()
+        for field_name in required_fields:
+            if not hasattr(self, field_name):
+                errors.append(f"Required field '{field_name}' is missing after validation. This should not happen.")
+            else:
+                value = getattr(self, field_name)
+                if value is None:
+                    errors.append(f"Required field '{field_name}' cannot be None")
+                elif field_name == 'out_feature_indexes' and isinstance(value, list) and len(value) == 0:
+                    errors.append(f"Required field '{field_name}' cannot be an empty list")
+                elif field_name == 'projector_scale' and isinstance(value, list) and len(value) == 0:
+                    errors.append(f"Required field '{field_name}' cannot be an empty list")
+                elif field_name == 'encoder' and value not in ["dinov2_windowed_small", "dinov2_windowed_base"]:
+                    errors.append(f"Required field '{field_name}' must be one of ['dinov2_windowed_small', 'dinov2_windowed_base'], got '{value}'")
+                elif field_name in ['hidden_dim', 'patch_size', 'num_windows', 'sa_nheads', 'ca_nheads', 
+                                   'dec_n_points', 'dec_layers', 'resolution', 'positional_encoding_size']:
+                    if not isinstance(value, int):
+                        errors.append(f"Required field '{field_name}' must be an integer, got {type(value).__name__}")
+                    elif value <= 0:
+                        errors.append(f"Required field '{field_name}' must be > 0, got {value}")
+                elif field_name == 'projector_scale':
+                    if not isinstance(value, list):
+                        errors.append(f"Required field '{field_name}' must be a list, got {type(value).__name__}")
+                    else:
+                        valid_scales = ["P3", "P4", "P5"]
+                        invalid_scales = [s for s in value if s not in valid_scales]
+                        if invalid_scales:
+                            errors.append(f"Required field '{field_name}' contains invalid scales: {invalid_scales}. "
+                                        f"Valid scales are: {valid_scales}")
+                elif field_name == 'out_feature_indexes':
+                    if not isinstance(value, list):
+                        errors.append(f"Required field '{field_name}' must be a list, got {type(value).__name__}")
+                    else:
+                        invalid_indexes = [idx for idx in value if not isinstance(idx, int)]
+                        if invalid_indexes:
+                            errors.append(f"Required field '{field_name}' contains non-integer values: {invalid_indexes}")
+        
         
         # Check if this config class supports improvements
         supports_improvements = hasattr(self, 'use_improvements') and hasattr(self, 'improved_hidden_dim')
@@ -211,6 +384,13 @@ class RFDETRBaseConfig(ModelConfig):
                                     f"Did the validator fail to apply improved values?")
         else:
             # Configs without improvements support should have these disabled
+            # Also check if use_improvements was somehow set (should be caught by before validator, but double-check)
+            if hasattr(self, 'use_improvements') and self.use_improvements:
+                errors.append(
+                    f"{self.__class__.__name__} does not support use_improvements=True. "
+                    f"Only Base, Large, and Medium configs support improvements. "
+                    f"This should have been caught by the before validator."
+                )
             if self.num_encoder_layers != 0:
                 errors.append(f"num_encoder_layers should be 0 for {self.__class__.__name__} (improvements not supported), got {self.num_encoder_layers}")
             if self.use_cross_scale_fusion:
@@ -369,6 +549,9 @@ class RFDETRLargeConfig(RFDETRBaseConfig):
 class RFDETRNanoConfig(RFDETRBaseConfig):
     """
     The configuration for an RF-DETR Nano model.
+    
+    NOTE: This config does not support use_improvements=True.
+    Only Base, Large, and Medium configs support improvements.
     """
     out_feature_indexes: List[int] = [3, 6, 9, 12]
     num_windows: int = 2
@@ -377,10 +560,36 @@ class RFDETRNanoConfig(RFDETRBaseConfig):
     resolution: int = 384
     positional_encoding_size: int = 24
     pretrain_weights: Optional[str] = "rf-detr-nano.pth"
+    
+    @model_validator(mode='before')
+    @classmethod
+    def apply_improvements_before(cls, data):
+        """Reject use_improvements for configs that don't support it"""
+        if not isinstance(data, dict):
+            data = {} if data is None else dict(data)
+        
+        if data.get('use_improvements', False):
+            raise ValueError(
+                f"{cls.__name__} does not support use_improvements=True. "
+                f"Only Base, Large, and Medium configs support improvements. "
+                f"Remove use_improvements parameter or use RFDETRBaseConfig/RFDETRLargeConfig/RFDETRMediumConfig instead."
+            )
+        
+        # Remove use_improvements and improved_* fields if present (shouldn't be, but be safe)
+        data.pop('use_improvements', None)
+        data.pop('improved_hidden_dim', None)
+        data.pop('improved_sa_nheads', None)
+        data.pop('improved_ca_nheads', None)
+        data.pop('improved_dec_n_points', None)
+        
+        return data
 
 class RFDETRSmallConfig(RFDETRBaseConfig):
     """
     The configuration for an RF-DETR Small model.
+    
+    NOTE: This config does not support use_improvements=True.
+    Only Base, Large, and Medium configs support improvements.
     """
     out_feature_indexes: List[int] = [3, 6, 9, 12]
     num_windows: int = 2
@@ -389,6 +598,29 @@ class RFDETRSmallConfig(RFDETRBaseConfig):
     resolution: int = 512
     positional_encoding_size: int = 32
     pretrain_weights: Optional[str] = "rf-detr-small.pth"
+    
+    @model_validator(mode='before')
+    @classmethod
+    def apply_improvements_before(cls, data):
+        """Reject use_improvements for configs that don't support it"""
+        if not isinstance(data, dict):
+            data = {} if data is None else dict(data)
+        
+        if data.get('use_improvements', False):
+            raise ValueError(
+                f"{cls.__name__} does not support use_improvements=True. "
+                f"Only Base, Large, and Medium configs support improvements. "
+                f"Remove use_improvements parameter or use RFDETRBaseConfig/RFDETRLargeConfig/RFDETRMediumConfig instead."
+            )
+        
+        # Remove use_improvements and improved_* fields if present (shouldn't be, but be safe)
+        data.pop('use_improvements', None)
+        data.pop('improved_hidden_dim', None)
+        data.pop('improved_sa_nheads', None)
+        data.pop('improved_ca_nheads', None)
+        data.pop('improved_dec_n_points', None)
+        
+        return data
 
 class RFDETRMediumConfig(RFDETRBaseConfig):
     """
@@ -486,6 +718,12 @@ class RFDETRMediumConfig(RFDETRBaseConfig):
         return super().validate_config_values()
 
 class RFDETRSegPreviewConfig(RFDETRBaseConfig):
+    """
+    The configuration for an RF-DETR SegPreview model.
+    
+    NOTE: This config does not support use_improvements=True.
+    Only Base, Large, and Medium configs support improvements.
+    """
     segmentation_head: bool = True
     out_feature_indexes: List[int] = [3, 6, 9, 12]
     num_windows: int = 2
@@ -497,6 +735,29 @@ class RFDETRSegPreviewConfig(RFDETRBaseConfig):
     num_select: int = 200
     pretrain_weights: Optional[str] = "rf-detr-seg-preview.pt"
     num_classes: int = 90
+    
+    @model_validator(mode='before')
+    @classmethod
+    def apply_improvements_before(cls, data):
+        """Reject use_improvements for configs that don't support it"""
+        if not isinstance(data, dict):
+            data = {} if data is None else dict(data)
+        
+        if data.get('use_improvements', False):
+            raise ValueError(
+                f"{cls.__name__} does not support use_improvements=True. "
+                f"Only Base, Large, and Medium configs support improvements. "
+                f"Remove use_improvements parameter or use RFDETRBaseConfig/RFDETRLargeConfig/RFDETRMediumConfig instead."
+            )
+        
+        # Remove use_improvements and improved_* fields if present (shouldn't be, but be safe)
+        data.pop('use_improvements', None)
+        data.pop('improved_hidden_dim', None)
+        data.pop('improved_sa_nheads', None)
+        data.pop('improved_ca_nheads', None)
+        data.pop('improved_dec_n_points', None)
+        
+        return data
 
 class TrainConfig(BaseModel):
     lr: float = 1e-4

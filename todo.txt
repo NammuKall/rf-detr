@@ -1,0 +1,5 @@
+XX have it install numpy + torch and make sure everything needed is installed
+XX make sure model checkpoint is downloaded before checkpoint error
+XX why does the model config still not match even with initial model - check for broken pathway
+
+- move forward with other issues

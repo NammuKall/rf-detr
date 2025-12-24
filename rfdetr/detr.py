@@ -39,6 +39,85 @@ from rfdetr.util.metrics import MetricsPlotSink, MetricsTensorBoardSink, Metrics
 from rfdetr.util.coco_classes import COCO_CLASSES
 
 logger = getLogger(__name__)
+
+
+def _validate_model_dump_result(result, config_name: str, config_type: str) -> dict:
+    """
+    Validate that model_dump() returns a dictionary and provide informative error messages.
+    
+    This function provides detailed error messages if model_dump() returns an unexpected type,
+    which should never happen with Pydantic v2 but could indicate:
+    - Pydantic version incompatibility
+    - Config object corruption
+    - Unexpected override of model_dump() method
+    
+    Args:
+        result: The result from calling model_dump() on a Pydantic model
+        config_name: A descriptive name for the config (e.g., "train_config", "model_config")
+        config_type: The type/class name of the config object (e.g., "TrainConfig", "ModelConfig")
+    
+    Returns:
+        dict: The validated dictionary result from model_dump()
+    
+    Raises:
+        TypeError: If model_dump() returns a non-dict type, with detailed diagnostic information
+    """
+    if not isinstance(result, dict):
+        # Get Pydantic version for diagnostics
+        try:
+            import pydantic
+            pydantic_version = pydantic.__version__
+        except (ImportError, AttributeError):
+            pydantic_version = "unknown"
+        
+        # Log detailed diagnostic information before raising
+        logger.error(
+            f"CRITICAL: model_dump() returned unexpected type for {config_name}.\n"
+            f"  Config type: {config_type}\n"
+            f"  Expected type: dict\n"
+            f"  Actual type: {type(result).__name__}\n"
+            f"  Actual value: {repr(result)[:200]}...\n"
+            f"  Pydantic version: {pydantic_version}\n"
+            f"  This should never happen with Pydantic v2. Possible causes:\n"
+            f"    1. Pydantic version incompatibility (expected v2.x)\n"
+            f"    2. Config object corruption or unexpected state\n"
+            f"    3. Custom model_dump() override returning wrong type\n"
+            f"  Diagnostic steps:\n"
+            f"    1. Verify Pydantic version: pip show pydantic\n"
+            f"    2. Check config object: type({config_name})\n"
+            f"    3. Inspect config object state: {config_name}.__dict__\n"
+            f"    4. Try recreating config object from scratch"
+        )
+        
+        raise TypeError(
+            f"model_dump() returned unexpected type for {config_name} (type: {config_type}).\n"
+            f"Expected dict, but got {type(result).__name__}.\n\n"
+            f"This indicates a critical issue that should never occur with Pydantic v2:\n"
+            f"  • Pydantic version: {pydantic_version}\n"
+            f"  • Config type: {config_type}\n"
+            f"  • Returned type: {type(result).__name__}\n"
+            f"  • Returned value (first 200 chars): {repr(result)[:200]}\n\n"
+            f"Possible causes and solutions:\n"
+            f"  1. Pydantic version incompatibility:\n"
+            f"     → Check version: pip show pydantic\n"
+            f"     → Expected: Pydantic v2.x (model_dump() always returns dict)\n"
+            f"     → Fix: pip install 'pydantic>=2.0'\n\n"
+            f"  2. Config object corruption:\n"
+            f"     → The config object may be in an invalid state\n"
+            f"     → Try recreating the config object\n"
+            f"     → Check if config was modified after creation\n\n"
+            f"  3. Custom model_dump() override:\n"
+            f"     → Check if {config_type} or its base classes override model_dump()\n"
+            f"     → Ensure override returns dict\n\n"
+            f"To verify everything is working properly after fixing:\n"
+            f"  1. Create a fresh config object: config = {config_type}(...)\n"
+            f"  2. Call model_dump(): result = config.model_dump()\n"
+            f"  3. Verify type: assert isinstance(result, dict)\n"
+            f"  4. Check result structure: print(result.keys())\n"
+            f"  5. If issues persist, check Pydantic documentation for your version"
+        )
+    
+    return result
 class RFDETR:
     """
     The base RF-DETR class implements the core methods for training RF-DETR models,
@@ -203,13 +282,17 @@ class RFDETR:
         if self.model_config.num_classes != num_classes:
             self.model.reinitialize_detection_head(num_classes)
         
-        train_config = config.model_dump()
-        if not isinstance(train_config, dict):
-            raise TypeError(f"config.model_dump() returned {type(train_config)}, expected dict")
+        train_config = _validate_model_dump_result(
+            config.model_dump(),
+            config_name="train_config",
+            config_type=config.__class__.__name__
+        )
         
-        model_config = self.model_config.model_dump()
-        if not isinstance(model_config, dict):
-            raise TypeError(f"self.model_config.model_dump() returned {type(model_config)}, expected dict")
+        model_config = _validate_model_dump_result(
+            self.model_config.model_dump(),
+            config_name="model_config",
+            config_type=self.model_config.__class__.__name__
+        )
         
         model_config.pop("num_classes")
         if "class_names" in model_config:
@@ -236,9 +319,11 @@ class RFDETR:
             self.callbacks["on_train_end"].append(metrics_tensor_board_sink.close)
 
         if config.wandb:
-            wandb_config = config.model_dump()
-            if not isinstance(wandb_config, dict):
-                raise TypeError(f"config.model_dump() returned {type(wandb_config)}, expected dict")
+            wandb_config = _validate_model_dump_result(
+                config.model_dump(),
+                config_name="wandb_config",
+                config_type=config.__class__.__name__
+            )
             metrics_wandb_sink = MetricsWandBSink(
                 output_dir=config.output_dir,
                 project=config.project,
@@ -274,9 +359,11 @@ class RFDETR:
         """
         Retrieve a model instance based on the provided configuration.
         """
-        config_dict = config.model_dump()
-        if not isinstance(config_dict, dict):
-            raise TypeError(f"config.model_dump() returned {type(config_dict)}, expected dict")
+        config_dict = _validate_model_dump_result(
+            config.model_dump(),
+            config_name="config_dict",
+            config_type=config.__class__.__name__
+        )
         return Model(**config_dict)
     
     # Get class_names from the model
