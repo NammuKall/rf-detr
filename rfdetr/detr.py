@@ -203,8 +203,14 @@ class RFDETR:
         if self.model_config.num_classes != num_classes:
             self.model.reinitialize_detection_head(num_classes)
         
-        train_config = config.dict()
-        model_config = self.model_config.dict()
+        train_config = config.model_dump()
+        if not isinstance(train_config, dict):
+            raise TypeError(f"config.model_dump() returned {type(train_config)}, expected dict")
+        
+        model_config = self.model_config.model_dump()
+        if not isinstance(model_config, dict):
+            raise TypeError(f"self.model_config.model_dump() returned {type(model_config)}, expected dict")
+        
         model_config.pop("num_classes")
         if "class_names" in model_config:
             model_config.pop("class_names")
@@ -230,11 +236,14 @@ class RFDETR:
             self.callbacks["on_train_end"].append(metrics_tensor_board_sink.close)
 
         if config.wandb:
+            wandb_config = config.model_dump()
+            if not isinstance(wandb_config, dict):
+                raise TypeError(f"config.model_dump() returned {type(wandb_config)}, expected dict")
             metrics_wandb_sink = MetricsWandBSink(
                 output_dir=config.output_dir,
                 project=config.project,
                 run=config.run,
-                config=config.model_dump()
+                config=wandb_config
             )
             self.callbacks["on_fit_epoch_end"].append(metrics_wandb_sink.update)
             self.callbacks["on_train_end"].append(metrics_wandb_sink.close)
@@ -265,7 +274,10 @@ class RFDETR:
         """
         Retrieve a model instance based on the provided configuration.
         """
-        return Model(**config.dict())
+        config_dict = config.model_dump()
+        if not isinstance(config_dict, dict):
+            raise TypeError(f"config.model_dump() returned {type(config_dict)}, expected dict")
+        return Model(**config_dict)
     
     # Get class_names from the model
     @property

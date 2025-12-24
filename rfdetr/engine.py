@@ -268,7 +268,8 @@ def coco_extended_metrics(coco_eval):
         "class_map": per_class,
         "map"      : map_50,
         "precision": macro_precision,
-        "recall"   : macro_recall
+        "recall"   : macro_recall,
+        "f1"       : macro_f1
     }
 
 def evaluate(model, criterion, postprocess, data_loader, base_ds, device, args=None):

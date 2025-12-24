@@ -88,33 +88,187 @@ class RFDETRBaseConfig(ModelConfig):
     @classmethod
     def apply_improvements_before(cls, data):
         """Apply improvements before model creation"""
-        if isinstance(data, dict):
-            use_improvements = data.get('use_improvements', False)
+        # Ensure data is a dict (handle None, empty dict, or other types)
+        if not isinstance(data, dict):
+            data = {} if data is None else dict(data)
+        
+        use_improvements = data.get('use_improvements', False)
+        
+        if use_improvements:
+            # Apply improved dimensions - use improved_* values if provided, otherwise use defaults
+            improved_hidden_dim = data.pop('improved_hidden_dim', None)
+            improved_sa_nheads = data.pop('improved_sa_nheads', None)
+            improved_ca_nheads = data.pop('improved_ca_nheads', None)
+            improved_dec_n_points = data.pop('improved_dec_n_points', None)
             
-            if use_improvements:
-                # Apply improved dimensions
-                data.setdefault('hidden_dim', data.pop('improved_hidden_dim', 320))
-                data.setdefault('sa_nheads', data.pop('improved_sa_nheads', 10))
-                data.setdefault('ca_nheads', data.pop('improved_ca_nheads', 20))
-                data.setdefault('dec_n_points', data.pop('improved_dec_n_points', 4))
-                data.setdefault('num_encoder_layers', 2)
-                data.setdefault('use_cross_scale_fusion', True)
-            else:
-                # Ensure original dimensions are used (explicitly set to prevent any improved values)
-                # Always use original dimensions when use_improvements=False, regardless of what's in data
-                data['hidden_dim'] = 256
-                data['sa_nheads'] = 8
-                data['ca_nheads'] = 16
-                data['dec_n_points'] = 2
+            # Get class defaults for improved values
+            if improved_hidden_dim is not None:
+                data['hidden_dim'] = improved_hidden_dim
+            elif 'hidden_dim' not in data:
+                # Use class default if not set
+                data['hidden_dim'] = getattr(cls, 'improved_hidden_dim', 320)
+            
+            if improved_sa_nheads is not None:
+                data['sa_nheads'] = improved_sa_nheads
+            elif 'sa_nheads' not in data:
+                data['sa_nheads'] = getattr(cls, 'improved_sa_nheads', 10)
+            
+            if improved_ca_nheads is not None:
+                data['ca_nheads'] = improved_ca_nheads
+            elif 'ca_nheads' not in data:
+                data['ca_nheads'] = getattr(cls, 'improved_ca_nheads', 20)
+            
+            if improved_dec_n_points is not None:
+                data['dec_n_points'] = improved_dec_n_points
+            elif 'dec_n_points' not in data:
+                data['dec_n_points'] = getattr(cls, 'improved_dec_n_points', 4)
+            
+            data.setdefault('num_encoder_layers', 2)
+            data.setdefault('use_cross_scale_fusion', True)
+        else:
+            # When use_improvements=False, ensure improved values are removed
+            # but don't override existing values (let class defaults handle it)
+            data.pop('improved_hidden_dim', None)
+            data.pop('improved_sa_nheads', None)
+            data.pop('improved_ca_nheads', None)
+            data.pop('improved_dec_n_points', None)
+            # Only set these if not already set (to allow class defaults to work)
+            if 'num_encoder_layers' not in data:
                 data['num_encoder_layers'] = 0
+            if 'use_cross_scale_fusion' not in data:
                 data['use_cross_scale_fusion'] = False
-                # Remove improved values if present
-                data.pop('improved_hidden_dim', None)
-                data.pop('improved_sa_nheads', None)
-                data.pop('improved_ca_nheads', None)
-                data.pop('improved_dec_n_points', None)
         
         return data
+    
+    def _get_original_dimensions(self):
+        """Get original dimensions for this config class (from class defaults).
+        
+        Uses Pydantic v2 model_fields to dynamically get class defaults,
+        making this work correctly for all config subclasses.
+        """
+        cls = self.__class__
+        # Access model_fields safely - in Pydantic v2, model_fields is a dict-like object
+        def get_field_default(field_name, fallback):
+            field_info = cls.model_fields.get(field_name) if hasattr(cls, 'model_fields') else None
+            if field_info and hasattr(field_info, 'default') and field_info.default is not None:
+                return field_info.default
+            # Try to get from class attribute as fallback
+            return getattr(cls, field_name, fallback)
+        
+        return {
+            'hidden_dim': get_field_default('hidden_dim', 256),
+            'sa_nheads': get_field_default('sa_nheads', 8),
+            'ca_nheads': get_field_default('ca_nheads', 16),
+            'dec_n_points': get_field_default('dec_n_points', 2),
+        }
+    
+    @model_validator(mode='after')
+    def validate_config_values(self):
+        """Comprehensive validation of config values after validator execution.
+        
+        Validates:
+        1. Improved/original value consistency based on use_improvements flag
+        2. Critical value ranges
+        3. Field consistency (e.g., ca_nheads >= sa_nheads, hidden_dim divisibility)
+        4. Encoder/cross-scale fusion settings consistency
+        
+        This validator uses dynamic class-based values instead of hardcoded ones,
+        making it work correctly for all config subclasses.
+        """
+        errors = []
+        
+        # Check if this config class supports improvements
+        supports_improvements = hasattr(self, 'use_improvements') and hasattr(self, 'improved_hidden_dim')
+        
+        # 1. Validate use_improvements flag consistency (only if improvements are supported)
+        if supports_improvements:
+            if not self.use_improvements:
+                # When improvements are disabled, validate original values are used
+                if self.num_encoder_layers != 0:
+                    errors.append(f"num_encoder_layers should be 0 when use_improvements=False, got {self.num_encoder_layers}")
+                if self.use_cross_scale_fusion:
+                    errors.append("use_cross_scale_fusion should be False when use_improvements=False")
+                
+                # Validate that we're using original (not improved) dimensions
+                original_dims = self._get_original_dimensions()
+                if hasattr(self, 'improved_hidden_dim') and self.hidden_dim == self.improved_hidden_dim:
+                    errors.append(f"hidden_dim={self.hidden_dim} matches improved_hidden_dim when use_improvements=False. "
+                                f"Expected original hidden_dim={original_dims['hidden_dim']}. "
+                                f"Did the validator fail to apply original values?")
+            else:
+                # When improvements are enabled, validate improved values were applied
+                if self.num_encoder_layers == 0:
+                    errors.append(f"num_encoder_layers should be > 0 when use_improvements=True, got {self.num_encoder_layers}")
+                if not self.use_cross_scale_fusion:
+                    errors.append("use_cross_scale_fusion should be True when use_improvements=True")
+                
+                # Validate that improved dimensions are being used (not original)
+                if hasattr(self, 'improved_hidden_dim'):
+                    original_dims = self._get_original_dimensions()
+                    if self.hidden_dim == original_dims['hidden_dim']:
+                        errors.append(f"hidden_dim={self.hidden_dim} matches original value when use_improvements=True. "
+                                    f"Expected improved_hidden_dim={self.improved_hidden_dim}. "
+                                    f"Did the validator fail to apply improved values?")
+        else:
+            # Configs without improvements support should have these disabled
+            if self.num_encoder_layers != 0:
+                errors.append(f"num_encoder_layers should be 0 for {self.__class__.__name__} (improvements not supported), got {self.num_encoder_layers}")
+            if self.use_cross_scale_fusion:
+                errors.append(f"use_cross_scale_fusion should be False for {self.__class__.__name__} (improvements not supported)")
+        
+        # 2. Validate critical value ranges
+        if self.hidden_dim <= 0:
+            errors.append(f"hidden_dim must be > 0, got {self.hidden_dim}")
+        if self.sa_nheads <= 0:
+            errors.append(f"sa_nheads must be > 0, got {self.sa_nheads}")
+        if self.ca_nheads <= 0:
+            errors.append(f"ca_nheads must be > 0, got {self.ca_nheads}")
+        if self.dec_n_points <= 0:
+            errors.append(f"dec_n_points must be > 0, got {self.dec_n_points}")
+        if self.dec_layers <= 0:
+            errors.append(f"dec_layers must be > 0, got {self.dec_layers}")
+        if self.num_encoder_layers < 0:
+            errors.append(f"num_encoder_layers must be >= 0, got {self.num_encoder_layers}")
+        
+        # 3. Validate field consistency
+        # Only check consistency if values are valid (to avoid division by zero)
+        if self.sa_nheads > 0 and self.ca_nheads > 0:
+            # ca_nheads should typically be >= sa_nheads (cross-attention often needs more heads)
+            if self.ca_nheads < self.sa_nheads:
+                errors.append(f"ca_nheads ({self.ca_nheads}) < sa_nheads ({self.sa_nheads}). "
+                             f"Cross-attention typically needs at least as many heads as self-attention.")
+        
+        # hidden_dim should be divisible by sa_nheads and ca_nheads for efficient attention
+        # Only check divisibility if values are valid (to avoid division by zero)
+        if self.hidden_dim > 0 and self.sa_nheads > 0:
+            if self.hidden_dim % self.sa_nheads != 0:
+                errors.append(f"hidden_dim ({self.hidden_dim}) is not divisible by sa_nheads ({self.sa_nheads}). "
+                             f"This may cause dimension mismatches in attention layers.")
+        if self.hidden_dim > 0 and self.ca_nheads > 0:
+            if self.hidden_dim % self.ca_nheads != 0:
+                errors.append(f"hidden_dim ({self.hidden_dim}) is not divisible by ca_nheads ({self.ca_nheads}). "
+                             f"This may cause dimension mismatches in attention layers.")
+        
+        # 4. Validate encoder and cross-scale fusion consistency
+        if self.num_encoder_layers > 0 and not self.use_cross_scale_fusion:
+            # This is not necessarily an error, but worth warning
+            # Cross-scale fusion is typically used with encoder layers
+            pass  # Allow this combination, but could add warning if needed
+        
+        # 5. Validate resolution and positional encoding consistency
+        if hasattr(self, 'resolution') and hasattr(self, 'positional_encoding_size'):
+            # Positional encoding size should roughly match resolution / patch_size
+            expected_pos_size = (self.resolution // self.patch_size) + 1  # Approximate
+            if abs(self.positional_encoding_size - expected_pos_size) > 5:
+                # Allow some flexibility, but warn if very different
+                pass  # Could add warning if needed
+        
+        # Raise all errors at once for better debugging
+        if errors:
+            error_msg = "Config validation failed:\n  " + "\n  ".join(errors)
+            raise ValueError(error_msg)
+        
+        return self
 
 class RFDETRLargeConfig(RFDETRBaseConfig):
     """
@@ -150,26 +304,67 @@ class RFDETRLargeConfig(RFDETRBaseConfig):
     @classmethod
     def apply_improvements_before(cls, data):
         """Apply improvements before model creation"""
-        if isinstance(data, dict):
-            use_improvements = data.get('use_improvements', False)
+        # Ensure data is a dict (handle None, empty dict, or other types)
+        if not isinstance(data, dict):
+            data = {} if data is None else dict(data)
+        
+        use_improvements = data.get('use_improvements', False)
+        
+        if use_improvements:
+            # Apply improved dimensions - use improved_* values if provided, otherwise use defaults
+            improved_hidden_dim = data.pop('improved_hidden_dim', None)
+            improved_sa_nheads = data.pop('improved_sa_nheads', None)
+            improved_ca_nheads = data.pop('improved_ca_nheads', None)
+            improved_dec_n_points = data.pop('improved_dec_n_points', None)
             
-            if use_improvements:
-                data.setdefault('hidden_dim', data.pop('improved_hidden_dim', 512))
-                data.setdefault('sa_nheads', data.pop('improved_sa_nheads', 16))
-                data.setdefault('ca_nheads', data.pop('improved_ca_nheads', 32))
-                data.setdefault('dec_n_points', data.pop('improved_dec_n_points', 6))
-                data.setdefault('num_encoder_layers', 3)
-                data.setdefault('use_cross_scale_fusion', True)
-            else:
-                # Ensure original dimensions are used (explicitly set to prevent any improved values)
-                data['hidden_dim'] = 384
-                data['sa_nheads'] = 12
-                data['ca_nheads'] = 24
-                data['dec_n_points'] = 4
+            # Get class defaults for improved values
+            if improved_hidden_dim is not None:
+                data['hidden_dim'] = improved_hidden_dim
+            elif 'hidden_dim' not in data:
+                data['hidden_dim'] = getattr(cls, 'improved_hidden_dim', 512)
+            
+            if improved_sa_nheads is not None:
+                data['sa_nheads'] = improved_sa_nheads
+            elif 'sa_nheads' not in data:
+                data['sa_nheads'] = getattr(cls, 'improved_sa_nheads', 16)
+            
+            if improved_ca_nheads is not None:
+                data['ca_nheads'] = improved_ca_nheads
+            elif 'ca_nheads' not in data:
+                data['ca_nheads'] = getattr(cls, 'improved_ca_nheads', 32)
+            
+            if improved_dec_n_points is not None:
+                data['dec_n_points'] = improved_dec_n_points
+            elif 'dec_n_points' not in data:
+                data['dec_n_points'] = getattr(cls, 'improved_dec_n_points', 6)
+            
+            data.setdefault('num_encoder_layers', 3)
+            data.setdefault('use_cross_scale_fusion', True)
+        else:
+            # When use_improvements=False, ensure improved values are removed
+            # but don't override existing values (let class defaults handle it)
+            data.pop('improved_hidden_dim', None)
+            data.pop('improved_sa_nheads', None)
+            data.pop('improved_ca_nheads', None)
+            data.pop('improved_dec_n_points', None)
+            # Only set these if not already set (to allow class defaults to work)
+            if 'num_encoder_layers' not in data:
                 data['num_encoder_layers'] = 0
+            if 'use_cross_scale_fusion' not in data:
                 data['use_cross_scale_fusion'] = False
         
         return data
+    
+    @model_validator(mode='after')
+    def validate_config_values(self):
+        """Comprehensive validation of config values after validator execution.
+        
+        Uses the inherited validator from RFDETRBaseConfig which dynamically
+        determines original values from class defaults, making it work correctly
+        for all config subclasses including LargeConfig.
+        """
+        # Call parent validator which uses dynamic class-based values
+        return super().validate_config_values()
 
 class RFDETRNanoConfig(RFDETRBaseConfig):
     """
@@ -228,26 +423,67 @@ class RFDETRMediumConfig(RFDETRBaseConfig):
     @classmethod
     def apply_improvements_before(cls, data):
         """Apply improvements before model creation"""
-        if isinstance(data, dict):
-            use_improvements = data.get('use_improvements', False)
+        # Ensure data is a dict (handle None, empty dict, or other types)
+        if not isinstance(data, dict):
+            data = {} if data is None else dict(data)
+        
+        use_improvements = data.get('use_improvements', False)
+        
+        if use_improvements:
+            # Apply improved dimensions - use improved_* values if provided, otherwise use defaults
+            improved_hidden_dim = data.pop('improved_hidden_dim', None)
+            improved_sa_nheads = data.pop('improved_sa_nheads', None)
+            improved_ca_nheads = data.pop('improved_ca_nheads', None)
+            improved_dec_n_points = data.pop('improved_dec_n_points', None)
             
-            if use_improvements:
-                data.setdefault('hidden_dim', data.pop('improved_hidden_dim', 384))
-                data.setdefault('sa_nheads', data.pop('improved_sa_nheads', 12))
-                data.setdefault('ca_nheads', data.pop('improved_ca_nheads', 24))
-                data.setdefault('dec_n_points', data.pop('improved_dec_n_points', 4))
-                data.setdefault('num_encoder_layers', 2)
-                data.setdefault('use_cross_scale_fusion', True)
-            else:
-                # Ensure original dimensions are used (explicitly set to prevent any improved values)
-                data['hidden_dim'] = 256
-                data['sa_nheads'] = 8
-                data['ca_nheads'] = 16
-                data['dec_n_points'] = 2
+            # Get class defaults for improved values
+            if improved_hidden_dim is not None:
+                data['hidden_dim'] = improved_hidden_dim
+            elif 'hidden_dim' not in data:
+                data['hidden_dim'] = getattr(cls, 'improved_hidden_dim', 384)
+            
+            if improved_sa_nheads is not None:
+                data['sa_nheads'] = improved_sa_nheads
+            elif 'sa_nheads' not in data:
+                data['sa_nheads'] = getattr(cls, 'improved_sa_nheads', 12)
+            
+            if improved_ca_nheads is not None:
+                data['ca_nheads'] = improved_ca_nheads
+            elif 'ca_nheads' not in data:
+                data['ca_nheads'] = getattr(cls, 'improved_ca_nheads', 24)
+            
+            if improved_dec_n_points is not None:
+                data['dec_n_points'] = improved_dec_n_points
+            elif 'dec_n_points' not in data:
+                data['dec_n_points'] = getattr(cls, 'improved_dec_n_points', 4)
+            
+            data.setdefault('num_encoder_layers', 2)
+            data.setdefault('use_cross_scale_fusion', True)
+        else:
+            # When use_improvements=False, ensure improved values are removed
+            # but don't override existing values (let class defaults handle it)
+            data.pop('improved_hidden_dim', None)
+            data.pop('improved_sa_nheads', None)
+            data.pop('improved_ca_nheads', None)
+            data.pop('improved_dec_n_points', None)
+            # Only set these if not already set (to allow class defaults to work)
+            if 'num_encoder_layers' not in data:
                 data['num_encoder_layers'] = 0
+            if 'use_cross_scale_fusion' not in data:
                 data['use_cross_scale_fusion'] = False
         
         return data
+    
+    @model_validator(mode='after')
+    def validate_config_values(self):
+        """Comprehensive validation of config values after validator execution.
+        
+        Uses the inherited validator from RFDETRBaseConfig which dynamically
+        determines original values from class defaults, making it work correctly
+        for all config subclasses including MediumConfig.
+        """
+        # Call parent validator which uses dynamic class-based values
+        return super().validate_config_values()
 
 class RFDETRSegPreviewConfig(RFDETRBaseConfig):
     segmentation_head: bool = True

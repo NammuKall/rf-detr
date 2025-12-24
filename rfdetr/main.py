@@ -264,6 +264,8 @@ class Model:
                         current_model_state_dict=current_model_state_dict,
                         critical_only=True
                     )
+                    
+                    # Log differences and warnings
                     if differences:
                         logger.warning(
                             f"Config differences detected between checkpoint and current config:\n"
@@ -276,8 +278,30 @@ class Model:
                                 logger.warning(warning)
                             else:
                                 logger.info(warning)
+                    
+                    # Fail on critical mismatches if strict_checkpoint_validation is True
+                    if not is_compatible and getattr(args, 'strict_checkpoint_validation', True):
+                        critical_differences = {
+                            param: vals for param, vals in differences.items()
+                            if param in ['encoder', 'hidden_dim', 'sa_nheads', 'ca_nheads', 'dec_layers',
+                                        'dec_n_points', 'num_queries', 'group_detr', 'projector_scale',
+                                        'out_feature_indexes', 'num_classes_transformed']
+                        }
+                        error_msg = (
+                            f"CRITICAL: Checkpoint config is incompatible with current config.\n"
+                            f"Loading this checkpoint with mismatched architecture parameters will cause errors.\n\n"
+                            f"Critical mismatches:\n"
+                            + "\n".join(f"  - {param}: checkpoint={vals['checkpoint']}, current={vals['current']}"
+                                      for param, vals in critical_differences.items())
+                            + f"\n\nTo proceed anyway, set strict_checkpoint_validation=False when creating the Model.\n"
+                            f"However, this may cause runtime errors or incorrect model behavior."
+                        )
+                        raise ValueError(error_msg)
+                except ValueError:
+                    # Re-raise ValueError (our config mismatch error)
+                    raise
                 except Exception as e:
-                    # Don't fail loading if validation fails - just log
+                    # Don't fail loading if validation fails unexpectedly - just log
                     logger.warning(f"Config comparison failed (non-fatal): {e}")
                 
             checkpoint_num_classes = checkpoint['model']['class_embed.bias'].shape[0]
@@ -619,11 +643,17 @@ class Model:
                         **{f'test_{k}': v for k, v in test_stats.items()},
                         'epoch': epoch,
                         'n_parameters': n_parameters}
+            # Extract F1 score from results_json if available
+            if 'results_json' in test_stats and 'f1' in test_stats['results_json']:
+                log_stats['test_f1'] = test_stats['results_json']['f1']
             if args.use_ema:
                 ema_test_stats, _ = evaluate(
                     self.ema_m.module, criterion, postprocess, data_loader_val, base_ds, device, args=args
                 )
                 log_stats.update({f'ema_test_{k}': v for k,v in ema_test_stats.items()})
+                # Extract F1 score from EMA results_json if available
+                if 'results_json' in ema_test_stats and 'f1' in ema_test_stats['results_json']:
+                    log_stats['ema_test_f1'] = ema_test_stats['results_json']['f1']
                 if not args.segmentation_head:
                     map_ema = ema_test_stats["coco_eval_bbox"][0]
                 else:
@@ -1112,34 +1142,40 @@ def populate_args(
     pretrain_exclude_keys=None,
     pretrain_keys_modify_to_load=None,
     pretrained_distiller=None,
+    strict_checkpoint_validation=True,  # If True, fail on critical config mismatches
     
     # Backbone parameters
-    encoder='vit_tiny',
+    encoder='dinov2_windowed_small',  # Base model default (was 'vit_tiny', fixed to match RFDETRBaseConfig)
     vit_encoder_num_layers=12,
     window_block_indexes=None,
     position_embedding='sine',
-    out_feature_indexes=[-1],
+    out_feature_indexes=[2, 5, 8, 11],  # Base model default (was [-1], fixed to match RFDETRBaseConfig)
     freeze_encoder=False,
-    layer_norm=False,
+    layer_norm=True,  # Base model default (was False, fixed to match ModelConfig)
     rms_norm=False,
     backbone_lora=False,
     force_no_pretrain=False,
+    patch_size=14,  # Base model default (matches RFDETRBaseConfig)
+    num_windows=4,  # Base model default (matches RFDETRBaseConfig)
+    positional_encoding_size=37,  # Base model default (matches RFDETRBaseConfig)
+    segmentation_head=False,  # Default to False (matches ModelConfig)
+    mask_downsample_ratio=4,  # Default value (matches ModelConfig)
     
     # Transformer parameters
     dec_layers=3,
     dim_feedforward=2048,
     hidden_dim=256,
     sa_nheads=8,
-    ca_nheads=8,
+    ca_nheads=16,  # Base model default (was 8, fixed to match RFDETRBaseConfig)
     num_queries=300,
     group_detr=13,
-    two_stage=False,
-    projector_scale='P4',
-    lite_refpoint_refine=False,
-    num_select=100,
-    dec_n_points=4,
+    two_stage=True,  # Base model default (was False, fixed to match ModelConfig)
+    projector_scale=['P4'],  # Base model default (was 'P4', fixed to match RFDETRBaseConfig - must be list)
+    lite_refpoint_refine=True,  # Base model default (was False, fixed to match ModelConfig)
+    num_select=300,  # Base model default (was 100, fixed to match RFDETRBaseConfig)
+    dec_n_points=2,  # Base model default (was 4, fixed to match RFDETRBaseConfig)
     decoder_norm='LN',
-    bbox_reparam=False,
+    bbox_reparam=True,  # Base model default (was False, fixed to match ModelConfig)
     freeze_batch_norm=False,
     # NEW: Encoder parameters for improved architecture
     num_encoder_layers=0,
@@ -1193,7 +1229,7 @@ def populate_args(
     # Custom args
     encoder_only=False,
     backbone_only=False,
-    resolution=640,
+    resolution=560,  # Base model default (was 640, fixed to match RFDETRBaseConfig)
     use_cls_token=False,
     multi_scale=False,
     expanded_scales=False,
@@ -1235,6 +1271,7 @@ def populate_args(
         pretrain_exclude_keys=pretrain_exclude_keys,
         pretrain_keys_modify_to_load=pretrain_keys_modify_to_load,
         pretrained_distiller=pretrained_distiller,
+        strict_checkpoint_validation=strict_checkpoint_validation,
         encoder=encoder,
         vit_encoder_num_layers=vit_encoder_num_layers,
         window_block_indexes=window_block_indexes,
@@ -1245,6 +1282,11 @@ def populate_args(
         rms_norm=rms_norm,
         backbone_lora=backbone_lora,
         force_no_pretrain=force_no_pretrain,
+        patch_size=patch_size,
+        num_windows=num_windows,
+        positional_encoding_size=positional_encoding_size,
+        segmentation_head=segmentation_head,
+        mask_downsample_ratio=mask_downsample_ratio,
         dec_layers=dec_layers,
         dim_feedforward=dim_feedforward,
         hidden_dim=hidden_dim,

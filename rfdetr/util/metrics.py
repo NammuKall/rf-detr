@@ -58,7 +58,11 @@ class MetricsPlotSink:
         ema_ap50 = np.array([safe_index(x, 1) for x in ema_coco_eval if x is not None], dtype=np.float32)
         ema_ar50_90 = np.array([safe_index(x, 8) for x in ema_coco_eval if x is not None], dtype=np.float32)
 
-        fig, axes = plt.subplots(2, 2, figsize=(18, 12))
+        # Extract F1 scores
+        test_f1 = get_array('test_f1')
+        ema_test_f1 = get_array('ema_test_f1')
+
+        fig, axes = plt.subplots(2, 3, figsize=(24, 12))
 
         # Subplot (0,0): Training and Validation Loss
         if len(epochs) > 0:
@@ -108,6 +112,21 @@ class MetricsPlotSink:
             axes[1][1].legend()
             axes[1][1].grid(True)
 
+        # Subplot (0,2): F1 Score
+        if test_f1.size > 0 or ema_test_f1.size > 0:
+            if test_f1.size > 0:
+                axes[0][2].plot(epochs[:len(test_f1)], test_f1, marker='o', linestyle='-', label='Base Model')
+            if ema_test_f1.size > 0:
+                axes[0][2].plot(epochs[:len(ema_test_f1)], ema_test_f1, marker='o', linestyle='--', label='EMA Model')
+            axes[0][2].set_title('F1 Score')
+            axes[0][2].set_xlabel('Epoch Number')
+            axes[0][2].set_ylabel('F1')
+            axes[0][2].legend()
+            axes[0][2].grid(True)
+
+        # Subplot (1,2): Empty (can be used for future metrics)
+        axes[1][2].axis('off')
+
         plt.tight_layout()
         plt.savefig(f"{self.output_dir}/{PLOT_FILE_NAME}")
         plt.close(fig)
@@ -152,6 +171,9 @@ class MetricsTensorBoardSink:
                 self.writer.add_scalar("Metrics/Base/AP50", ap50, epoch)
             if ar50_90 is not None:
                 self.writer.add_scalar("Metrics/Base/AR50_90", ar50_90, epoch)
+        
+        if 'test_f1' in values:
+            self.writer.add_scalar("Metrics/Base/F1", values['test_f1'], epoch)
 
         if 'ema_test_coco_eval_bbox' in values:
             ema_coco_eval = values['ema_test_coco_eval_bbox']
@@ -164,6 +186,9 @@ class MetricsTensorBoardSink:
                 self.writer.add_scalar("Metrics/EMA/AP50", ema_ap50, epoch)
             if ema_ar50_90 is not None:
                 self.writer.add_scalar("Metrics/EMA/AR50_90", ema_ar50_90, epoch)
+        
+        if 'ema_test_f1' in values:
+            self.writer.add_scalar("Metrics/EMA/F1", values['ema_test_f1'], epoch)
 
         self.writer.flush()
 
@@ -221,6 +246,9 @@ class MetricsWandBSink:
                 log_dict["Metrics/Base/AP50"] = ap50
             if ar50_90 is not None:
                 log_dict["Metrics/Base/AR50_90"] = ar50_90
+        
+        if 'test_f1' in values:
+            log_dict["Metrics/Base/F1"] = values['test_f1']
 
         if 'ema_test_coco_eval_bbox' in values:
             ema_coco_eval = values['ema_test_coco_eval_bbox']
@@ -233,6 +261,9 @@ class MetricsWandBSink:
                 log_dict["Metrics/EMA/AP50"] = ema_ap50
             if ema_ar50_90 is not None:
                 log_dict["Metrics/EMA/AR50_90"] = ema_ar50_90
+        
+        if 'ema_test_f1' in values:
+            log_dict["Metrics/EMA/F1"] = values['ema_test_f1']
 
         wandb.log(log_dict)
 
