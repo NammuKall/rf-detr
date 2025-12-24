@@ -31,15 +31,18 @@ def download_file(url: str, filename: str, max_retries: int = 3) -> bool:
             response = requests.get(url, stream=True, timeout=30)
             response.raise_for_status()
 
-            total_size = int(response.headers.get('content-length', 0))
+            total_size = int(response.headers.get("content-length", 0))
 
-            with open(filename, 'wb') as f, tqdm(
-                desc=os.path.basename(filename),
-                total=total_size,
-                unit='B',
-                unit_scale=True,
-                unit_divisor=1024,
-            ) as bar:
+            with (
+                open(filename, "wb") as f,
+                tqdm(
+                    desc=os.path.basename(filename),
+                    total=total_size,
+                    unit="B",
+                    unit_scale=True,
+                    unit_divisor=1024,
+                ) as bar,
+            ):
                 for chunk in response.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
@@ -71,8 +74,8 @@ def download_resume_checkpoint(resume_path: str, validate: bool = True) -> str:
     parsed = urlparse(resume_path)
 
     # If it's a URL, download it
-    if parsed.scheme in ('http', 'https'):
-        filename = os.path.basename(parsed.path) or 'checkpoint.pth'
+    if parsed.scheme in ("http", "https"):
+        filename = os.path.basename(parsed.path) or "checkpoint.pth"
         local_path = os.path.join(os.getcwd(), filename)
 
         if os.path.exists(local_path):
@@ -83,6 +86,7 @@ def download_resume_checkpoint(resume_path: str, validate: bool = True) -> str:
         if download_file(resume_path, local_path):
             if validate:
                 from rfdetr.util.checkpoint import validate_checkpoint
+
                 is_valid, error_msg = validate_checkpoint(local_path)
                 if not is_valid:
                     logger.warning(f"Checkpoint validation failed: {error_msg}")
@@ -92,4 +96,3 @@ def download_resume_checkpoint(resume_path: str, validate: bool = True) -> str:
     else:
         # Otherwise, return the path as-is
         return resume_path
-

@@ -15,4 +15,3 @@ __all__ = [
     "compare_configs",
     "validate_checkpoint_config_compatibility",
 ]
-

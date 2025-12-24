@@ -57,7 +57,7 @@ def download_pretrain_weights(pretrain_weights: str, redownload=False, validate=
         if os.path.exists(checkpoint_path):
             # File exists locally, validate if requested
             if validate:
-                is_valid, error_msg = validate_checkpoint(checkpoint_path, required_keys=['model'])
+                is_valid, error_msg = validate_checkpoint(checkpoint_path, required_keys=["model"])
                 if not is_valid:
                     logger.error(f"Checkpoint validation failed: {error_msg}")
                     return False
@@ -75,15 +75,12 @@ def download_pretrain_weights(pretrain_weights: str, redownload=False, validate=
     # Check if file already exists and is valid
     if os.path.exists(checkpoint_path) and not redownload:
         if validate:
-            is_valid, error_msg = validate_checkpoint(checkpoint_path, required_keys=['model'])
+            is_valid, error_msg = validate_checkpoint(checkpoint_path, required_keys=["model"])
             if is_valid:
                 logger.info(f"Checkpoint already exists and is valid: {checkpoint_path}")
                 return True
             else:
-                logger.warning(
-                    f"Existing checkpoint failed validation: {error_msg}\n"
-                    f"Will re-download..."
-                )
+                logger.warning(f"Existing checkpoint failed validation: {error_msg}\nWill re-download...")
                 # Remove corrupted file
                 try:
                     os.remove(checkpoint_path)
@@ -115,7 +112,7 @@ def download_pretrain_weights(pretrain_weights: str, redownload=False, validate=
 
     # Validate downloaded checkpoint if requested
     if validate:
-        is_valid, error_msg = validate_checkpoint(checkpoint_path, required_keys=['model'])
+        is_valid, error_msg = validate_checkpoint(checkpoint_path, required_keys=["model"])
         if not is_valid:
             logger.error(
                 f"Downloaded checkpoint failed validation: {error_msg}\n"
@@ -148,7 +145,7 @@ def load_pretrain_checkpoint(checkpoint_path: str, model, args, logger):
     """
     logger.info(f"Loading pretrain weights from: {checkpoint_path}")
     try:
-        checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
+        checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     except Exception as e:
         # This should rarely happen since we validated, but handle gracefully
         logger.error(
@@ -157,26 +154,22 @@ def load_pretrain_checkpoint(checkpoint_path: str, model, args, logger):
             f"Attempting to re-download..."
         )
         # Try one more re-download
-        checkpoint_available = download_pretrain_weights(
-            checkpoint_path,
-            redownload=True,
-            validate=True
-        )
+        checkpoint_available = download_pretrain_weights(checkpoint_path, redownload=True, validate=True)
         if not checkpoint_available:
             raise RuntimeError(
                 f"Failed to load checkpoint after re-download: {checkpoint_path}\n"
                 f"Original error: {e}\n"
                 f"Please check the checkpoint file manually or contact support."
             ) from e
-        checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
+        checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
 
     # Extract class_names from checkpoint if available
-    if 'args' in checkpoint and hasattr(checkpoint['args'], 'class_names'):
-        args.class_names = checkpoint['args'].class_names
+    if "args" in checkpoint and hasattr(checkpoint["args"], "class_names"):
+        args.class_names = checkpoint["args"].class_names
 
     # Issue 4 Fix: Handle missing 'args' key in checkpoint
     # Checkpoints without 'args' cannot be validated, which could be dangerous
-    if 'args' not in checkpoint:
+    if "args" not in checkpoint:
         warning_msg = (
             f"Checkpoint '{checkpoint_path}' does not contain 'args' key. "
             f"Config validation cannot be performed. "
@@ -184,7 +177,7 @@ def load_pretrain_checkpoint(checkpoint_path: str, model, args, logger):
             f"Consider re-saving the checkpoint with current version."
         )
 
-        if getattr(args, 'strict_checkpoint_validation', True):
+        if getattr(args, "strict_checkpoint_validation", True):
             # Fail on missing args when strict validation is enabled (default)
             raise ValueError(
                 warning_msg + "\n"
@@ -199,48 +192,65 @@ def load_pretrain_checkpoint(checkpoint_path: str, model, args, logger):
     # This accounts for transformations (e.g., num_classes increment) automatically
     # Uses actual model num_classes from state_dict (source of truth) rather than args
     # This fixes the root issue where checkpoint args.num_classes may not match the actual model
-    if 'args' in checkpoint:
+    if "args" in checkpoint:
         from rfdetr.util.config import compare_configs
+
         try:
             # Get current model state_dict for accurate comparison (model is already built)
             current_model_state_dict = model.state_dict() if model is not None else None
 
             is_compatible, differences, warnings = compare_configs(
-                checkpoint['args'],
+                checkpoint["args"],
                 args,
-                checkpoint_model_state_dict=checkpoint['model'],
+                checkpoint_model_state_dict=checkpoint["model"],
                 current_model_state_dict=current_model_state_dict,
-                critical_only=True
+                critical_only=True,
             )
 
             # Log differences and warnings
             if differences:
                 logger.warning(
                     "Config differences detected between checkpoint and current config:\n"
-                    + "\n".join(f"  - {param}: checkpoint={vals['checkpoint']}, current={vals['current']}"
-                              for param, vals in differences.items())
+                    + "\n".join(
+                        f"  - {param}: checkpoint={vals['checkpoint']}, current={vals['current']}"
+                        for param, vals in differences.items()
+                    )
                 )
             if warnings:
                 for warning in warnings:
-                    if 'CRITICAL' in warning:
+                    if "CRITICAL" in warning:
                         logger.warning(warning)
                     else:
                         logger.info(warning)
 
             # Fail on critical mismatches if strict_checkpoint_validation is True
-            if not is_compatible and getattr(args, 'strict_checkpoint_validation', True):
+            if not is_compatible and getattr(args, "strict_checkpoint_validation", True):
                 critical_differences = {
-                    param: vals for param, vals in differences.items()
-                    if param in ['encoder', 'hidden_dim', 'sa_nheads', 'ca_nheads', 'dec_layers',
-                                'dec_n_points', 'num_queries', 'group_detr', 'projector_scale',
-                                'out_feature_indexes', 'num_classes_transformed']
+                    param: vals
+                    for param, vals in differences.items()
+                    if param
+                    in [
+                        "encoder",
+                        "hidden_dim",
+                        "sa_nheads",
+                        "ca_nheads",
+                        "dec_layers",
+                        "dec_n_points",
+                        "num_queries",
+                        "group_detr",
+                        "projector_scale",
+                        "out_feature_indexes",
+                        "num_classes_transformed",
+                    ]
                 }
                 error_msg = (
                     "CRITICAL: Checkpoint config is incompatible with current config.\n"
                     "Loading this checkpoint with mismatched architecture parameters will cause errors.\n\n"
                     "Critical mismatches:\n"
-                    + "\n".join(f"  - {param}: checkpoint={vals['checkpoint']}, current={vals['current']}"
-                              for param, vals in critical_differences.items())
+                    + "\n".join(
+                        f"  - {param}: checkpoint={vals['checkpoint']}, current={vals['current']}"
+                        for param, vals in critical_differences.items()
+                    )
                     + "\n\nTo proceed anyway, set strict_checkpoint_validation=False when creating the Model.\n"
                     "However, this may cause runtime errors or incorrect model behavior."
                 )
@@ -252,7 +262,7 @@ def load_pretrain_checkpoint(checkpoint_path: str, model, args, logger):
             # Don't fail loading if validation fails unexpectedly - just log
             logger.warning(f"Config comparison failed (non-fatal): {e}")
 
-    checkpoint_num_classes = checkpoint['model']['class_embed.bias'].shape[0]
+    checkpoint_num_classes = checkpoint["model"]["class_embed.bias"].shape[0]
     if checkpoint_num_classes != args.num_classes + 1:
         model.reinitialize_detection_head(checkpoint_num_classes)
     # add support to exclude_keys
@@ -260,28 +270,28 @@ def load_pretrain_checkpoint(checkpoint_path: str, model, args, logger):
     if args.pretrain_exclude_keys is not None:
         assert isinstance(args.pretrain_exclude_keys, list)
         for exclude_key in args.pretrain_exclude_keys:
-            checkpoint['model'].pop(exclude_key)
+            checkpoint["model"].pop(exclude_key)
     if args.pretrain_keys_modify_to_load is not None:
         from rfdetr.util.obj365_to_coco_model import get_coco_pretrain_from_obj365
+
         assert isinstance(args.pretrain_keys_modify_to_load, list)
         for modify_key_to_load in args.pretrain_keys_modify_to_load:
             try:
-                checkpoint['model'][modify_key_to_load] = get_coco_pretrain_from_obj365(
-                    model.state_dict()[modify_key_to_load],
-                    checkpoint['model'][modify_key_to_load]
+                checkpoint["model"][modify_key_to_load] = get_coco_pretrain_from_obj365(
+                    model.state_dict()[modify_key_to_load], checkpoint["model"][modify_key_to_load]
                 )
             except Exception as e:
                 logger.warning(f"Failed to load {modify_key_to_load}, deleting from checkpoint: {e}")
-                checkpoint['model'].pop(modify_key_to_load)
+                checkpoint["model"].pop(modify_key_to_load)
 
     # we may want to resume training with a smaller number of groups for group detr
     num_desired_queries = args.num_queries * args.group_detr
     query_param_names = ["refpoint_embed.weight", "query_feat.weight"]
-    for name, state in checkpoint['model'].items():
+    for name, state in checkpoint["model"].items():
         if any(name.endswith(x) for x in query_param_names):
-            checkpoint['model'][name] = state[:num_desired_queries]
+            checkpoint["model"][name] = state[:num_desired_queries]
 
-    model.load_state_dict(checkpoint['model'], strict=False)
+    model.load_state_dict(checkpoint["model"], strict=False)
     return checkpoint
 
 
@@ -314,7 +324,7 @@ def load_resume_checkpoint(resume_path: str, model_without_ddp, ema_m, optimizer
 
     # Step 2: Load checkpoint (now guaranteed to exist and be valid)
     try:
-        checkpoint = torch.load(resume_checkpoint_path, map_location='cpu', weights_only=False)
+        checkpoint = torch.load(resume_checkpoint_path, map_location="cpu", weights_only=False)
     except Exception as e:
         raise RuntimeError(
             f"Failed to load resume checkpoint despite validation: {e}\n"
@@ -325,32 +335,29 @@ def load_resume_checkpoint(resume_path: str, model_without_ddp, ema_m, optimizer
 
     # Step 3: Load model state
     logger.info("Loading model state from checkpoint...")
-    model_without_ddp.load_state_dict(checkpoint['model'], strict=True)
+    model_without_ddp.load_state_dict(checkpoint["model"], strict=True)
 
     # Step 4: Load EMA model if applicable
     if args.use_ema:
-        if 'ema_model' in checkpoint:
+        if "ema_model" in checkpoint:
             logger.info("Loading EMA model state from checkpoint...")
-            ema_m.module.load_state_dict(clean_state_dict(checkpoint['ema_model']))
+            ema_m.module.load_state_dict(clean_state_dict(checkpoint["ema_model"]))
         else:
             logger.warning("EMA model not found in checkpoint, reinitializing EMA...")
             del ema_m
             from rfdetr.util.utils import ModelEma
+
             ema_m = ModelEma(model_without_ddp, decay=args.ema_decay, tau=args.ema_tau)
 
     # Step 5: Load optimizer and scheduler state if available
-    if not args.eval and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
+    if not args.eval and "optimizer" in checkpoint and "lr_scheduler" in checkpoint and "epoch" in checkpoint:
         logger.info("Loading optimizer and scheduler state from checkpoint...")
-        optimizer.load_state_dict(checkpoint['optimizer'])
-        lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
-        args.start_epoch = checkpoint['epoch'] + 1
+        optimizer.load_state_dict(checkpoint["optimizer"])
+        lr_scheduler.load_state_dict(checkpoint["lr_scheduler"])
+        args.start_epoch = checkpoint["epoch"] + 1
         logger.info(f"Resuming from epoch {args.start_epoch}")
     else:
         if not args.eval:
-            logger.warning(
-                "Checkpoint missing optimizer/scheduler/epoch information. "
-                "Starting from epoch 0."
-            )
+            logger.warning("Checkpoint missing optimizer/scheduler/epoch information. Starting from epoch 0.")
 
     return ema_m
-

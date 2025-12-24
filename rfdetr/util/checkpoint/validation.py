@@ -17,7 +17,7 @@ def validate_checkpoint(
     checkpoint_path: str,
     required_keys: Optional[list[str]] = None,
     checkpoint_type: str = "auto",
-    validate_structure: bool = True
+    validate_structure: bool = True,
 ) -> tuple[bool, Optional[str]]:
     """
     Validate that a checkpoint file exists and is a valid PyTorch checkpoint.
@@ -53,7 +53,7 @@ def validate_checkpoint(
 
     # Try to load and validate checkpoint structure
     try:
-        checkpoint = torch.load(checkpoint_path, map_location='cpu')
+        checkpoint = torch.load(checkpoint_path, map_location="cpu")
 
         if validate_structure:
             is_valid, error_msg, _ = validate_checkpoint_structure(
@@ -75,9 +75,7 @@ def validate_checkpoint(
 
 
 def validate_checkpoint_structure(
-    checkpoint: dict,
-    checkpoint_type: str = "auto",
-    required_keys: Optional[list[str]] = None
+    checkpoint: dict, checkpoint_type: str = "auto", required_keys: Optional[list[str]] = None
 ) -> tuple[bool, Optional[str], dict[str, bool]]:
     """
     Validate checkpoint structure based on checkpoint type.
@@ -122,9 +120,7 @@ def validate_checkpoint_structure(
 
 
 def validate_checkpoint_keys(
-    checkpoint: dict,
-    required_keys: list[str],
-    optional_keys: Optional[list[str]] = None
+    checkpoint: dict, required_keys: list[str], optional_keys: Optional[list[str]] = None
 ) -> tuple[bool, Optional[str], dict[str, bool]]:
     """
     Validate that checkpoint contains required keys.
@@ -154,4 +150,3 @@ def validate_checkpoint_keys(
         return False, f"Checkpoint missing required keys: {', '.join(missing_keys)}", key_presence
 
     return True, None, key_presence
-

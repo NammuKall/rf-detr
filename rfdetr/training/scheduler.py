@@ -35,10 +35,12 @@ def create_lr_scheduler(optimizer, args, dataset_train):
             return float(current_step) / float(max(1, warmup_steps_lr))
         else:
             # Cosine annealing from multiplier 1.0 down to lr_min_factor
-            if args.lr_scheduler == 'cosine':
-                progress = float(current_step - warmup_steps_lr) / float(max(1, total_training_steps_lr - warmup_steps_lr))
+            if args.lr_scheduler == "cosine":
+                progress = float(current_step - warmup_steps_lr) / float(
+                    max(1, total_training_steps_lr - warmup_steps_lr)
+                )
                 return args.lr_min_factor + (1 - args.lr_min_factor) * 0.5 * (1 + math.cos(math.pi * progress))
-            elif args.lr_scheduler == 'step':
+            elif args.lr_scheduler == "step":
                 if current_step < args.lr_drop * num_training_steps_per_epoch_lr:
                     return 1.0
                 else:
@@ -46,4 +48,3 @@ def create_lr_scheduler(optimizer, args, dataset_train):
 
     lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
     return lr_scheduler
-

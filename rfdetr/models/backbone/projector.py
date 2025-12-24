@@ -13,6 +13,7 @@
 """
 Projector
 """
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -66,12 +67,12 @@ def get_norm(norm, out_channels):
 
 
 def get_activation(name, inplace=False):
-    """ get activation """
+    """get activation"""
     if name == "silu":
         module = nn.SiLU(inplace=inplace)
     elif name == "relu":
         module = nn.ReLU(inplace=inplace)
-    elif name in ["LeakyReLU", 'leakyrelu', 'lrelu']:
+    elif name in ["LeakyReLU", "leakyrelu", "lrelu"]:
         module = nn.LeakyReLU(0.1, inplace=inplace)
     elif name is None:
         module = nn.Identity()
@@ -81,23 +82,42 @@ def get_activation(name, inplace=False):
 
 
 class ConvX(nn.Module):
-    """ Conv-bn module"""
-    def __init__(self, in_planes, out_planes, kernel=3, stride=1, groups=1, dilation=1, act='relu', layer_norm=False, rms_norm=False):
+    """Conv-bn module"""
+
+    def __init__(
+        self,
+        in_planes,
+        out_planes,
+        kernel=3,
+        stride=1,
+        groups=1,
+        dilation=1,
+        act="relu",
+        layer_norm=False,
+        rms_norm=False,
+    ):
         super().__init__()
         if not isinstance(kernel, tuple):
             kernel = (kernel, kernel)
         padding = (kernel[0] // 2, kernel[1] // 2)
-        self.conv = nn.Conv2d(in_planes, out_planes, kernel_size=kernel,
-                              stride=stride, padding=padding, groups=groups,
-                              dilation=dilation, bias=False)
+        self.conv = nn.Conv2d(
+            in_planes,
+            out_planes,
+            kernel_size=kernel,
+            stride=stride,
+            padding=padding,
+            groups=groups,
+            dilation=dilation,
+            bias=False,
+        )
         if rms_norm:
             self.bn = nn.RMSNorm(out_planes)
         else:
-            self.bn = get_norm('LN', out_planes) if layer_norm else nn.BatchNorm2d(out_planes)
+            self.bn = get_norm("LN", out_planes) if layer_norm else nn.BatchNorm2d(out_planes)
         self.act = get_activation(act, inplace=True)
 
     def forward(self, x):
-        """ forward """
+        """forward"""
         out = self.act(self.bn(self.conv(x.contiguous())))
         return out
 
@@ -105,8 +125,8 @@ class ConvX(nn.Module):
 class Bottleneck(nn.Module):
     """Standard bottleneck."""
 
-    def __init__(self, c1, c2, shortcut=True, g=1, k=(3, 3), e=0.5, act='silu', layer_norm=False, rms_norm=False):
-        """ ch_in, ch_out, shortcut, groups, kernels, expand """
+    def __init__(self, c1, c2, shortcut=True, g=1, k=(3, 3), e=0.5, act="silu", layer_norm=False, rms_norm=False):
+        """ch_in, ch_out, shortcut, groups, kernels, expand"""
         super().__init__()
         c_ = int(c2 * e)  # hidden channels
         self.cv1 = ConvX(c1, c_, k[0], 1, act=act, layer_norm=layer_norm, rms_norm=rms_norm)
@@ -121,13 +141,18 @@ class Bottleneck(nn.Module):
 class C2f(nn.Module):
     """Faster Implementation of CSP Bottleneck with 2 convolutions."""
 
-    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5, act='silu', layer_norm=False, rms_norm=False):
-        """ ch_in, ch_out, number, shortcut, groups, expansion """
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5, act="silu", layer_norm=False, rms_norm=False):
+        """ch_in, ch_out, number, shortcut, groups, expansion"""
         super().__init__()
         self.c = int(c2 * e)  # hidden channels
         self.cv1 = ConvX(c1, 2 * self.c, 1, 1, act=act, layer_norm=layer_norm, rms_norm=rms_norm)
-        self.cv2 = ConvX((2 + n) * self.c, c2, 1, act=act, layer_norm=layer_norm, rms_norm=rms_norm)  # optional act=FReLU(c2)
-        self.m = nn.ModuleList(Bottleneck(self.c, self.c, shortcut, g, k=(3, 3), e=1.0, act=act, layer_norm=layer_norm, rms_norm=rms_norm) for _ in range(n))
+        self.cv2 = ConvX(
+            (2 + n) * self.c, c2, 1, act=act, layer_norm=layer_norm, rms_norm=rms_norm
+        )  # optional act=FReLU(c2)
+        self.m = nn.ModuleList(
+            Bottleneck(self.c, self.c, shortcut, g, k=(3, 3), e=1.0, act=act, layer_norm=layer_norm, rms_norm=rms_norm)
+            for _ in range(n)
+        )
 
     def forward(self, x):
         """Forward pass using split() instead of chunk()."""
@@ -142,15 +167,15 @@ class CrossScaleFusion(nn.Module):
     Allows features at different scales to interact and share information.
     This improves detection of objects at multiple scales.
     """
+
     def __init__(self, channels, num_scales, layer_norm=False):
         super().__init__()
         self.num_scales = num_scales
         # Cross-scale attention weights (learnable)
         self.fusion_weights = nn.Parameter(torch.ones(num_scales) / num_scales)
         # Feature fusion convolution
-        self.fusion_conv = ConvX(channels * num_scales, channels, kernel=1,
-                                 layer_norm=layer_norm, act='silu')
-        self.norm = get_norm('LN', channels) if layer_norm else nn.Identity()
+        self.fusion_conv = ConvX(channels * num_scales, channels, kernel=1, layer_norm=layer_norm, act="silu")
+        self.norm = get_norm("LN", channels) if layer_norm else nn.Identity()
 
     def forward(self, features):
         """
@@ -170,7 +195,7 @@ class CrossScaleFusion(nn.Module):
         resized_features = []
         for feat in features:
             if feat.shape[-2:] != target_size:
-                feat_resized = F.interpolate(feat, size=target_size, mode='bilinear', align_corners=False)
+                feat_resized = F.interpolate(feat, size=target_size, mode="bilinear", align_corners=False)
             else:
                 feat_resized = feat
             resized_features.append(feat_resized)
@@ -187,7 +212,7 @@ class CrossScaleFusion(nn.Module):
         output_features = []
         for _i, (feat, orig_size) in enumerate(zip(features, original_sizes)):
             if orig_size != target_size:
-                output = F.interpolate(fused, size=orig_size, mode='bilinear', align_corners=False)
+                output = F.interpolate(fused, size=orig_size, mode="bilinear", align_corners=False)
             else:
                 output = fused
             # Add residual connection to original feature
@@ -232,9 +257,7 @@ class MultiScaleProjector(nn.Module):
 
         # NEW: Add cross-scale fusion module
         if use_cross_scale_fusion:
-            self.cross_scale_fusion = CrossScaleFusion(
-                out_channels, len(scale_factors), layer_norm=layer_norm
-            )
+            self.cross_scale_fusion = CrossScaleFusion(out_channels, len(scale_factors), layer_norm=layer_norm)
         else:
             self.cross_scale_fusion = None
 
@@ -252,12 +275,14 @@ class MultiScaleProjector(nn.Module):
                 #     in_dim = in_dim // 2
 
                 if scale == 4.0:
-                    layers.extend([
-                        nn.ConvTranspose2d(in_dim, in_dim // 2, kernel_size=2, stride=2),
-                        get_norm('LN', in_dim // 2),
-                        nn.GELU(),
-                        nn.ConvTranspose2d(in_dim // 2, in_dim // 4, kernel_size=2, stride=2),
-                    ])
+                    layers.extend(
+                        [
+                            nn.ConvTranspose2d(in_dim, in_dim // 2, kernel_size=2, stride=2),
+                            get_norm("LN", in_dim // 2),
+                            nn.GELU(),
+                            nn.ConvTranspose2d(in_dim // 2, in_dim // 4, kernel_size=2, stride=2),
+                        ]
+                    )
                     in_dim // 4
                 elif scale == 2.0:
                     # a hack to reduce the FLOPs and Params when the dimention of output feature is too large
@@ -268,16 +293,20 @@ class MultiScaleProjector(nn.Module):
                     #     ]
                     #     out_dim = in_dim // 4
                     # else:
-                    layers.extend([
-                        nn.ConvTranspose2d(in_dim, in_dim // 2, kernel_size=2, stride=2),
-                    ])
+                    layers.extend(
+                        [
+                            nn.ConvTranspose2d(in_dim, in_dim // 2, kernel_size=2, stride=2),
+                        ]
+                    )
                     in_dim // 2
                 elif scale == 1.0:
                     pass
                 elif scale == 0.5:
-                    layers.extend([
-                        ConvX(in_dim, in_dim, 3, 2, layer_norm=layer_norm),
-                    ])
+                    layers.extend(
+                        [
+                            ConvX(in_dim, in_dim, 3, 2, layer_norm=layer_norm),
+                        ]
+                    )
                 elif scale == 0.25:
                     self.use_extra_pool = True
                     continue
@@ -290,7 +319,7 @@ class MultiScaleProjector(nn.Module):
             in_dim = int(sum(in_channel // max(1, scale) for in_channel in in_channels))
             layers = [
                 C2f(in_dim, out_channels, num_blocks, layer_norm=layer_norm),
-                get_norm('LN', out_channels),
+                get_norm("LN", out_channels),
             ]
             layers = nn.Sequential(*layers)
             stages.append(layers)
@@ -320,7 +349,7 @@ class MultiScaleProjector(nn.Module):
         elif self.force_drop_last_n_features > 0:
             for i in range(self.force_drop_last_n_features):
                 # don't do it inplace to ensure the compiler can optimize out the backbone layers
-                x[-(i+1)] = torch.zeros_like(x[-(i+1)])
+                x[-(i + 1)] = torch.zeros_like(x[-(i + 1)])
 
         results = []
         # x list of len(out_features_indexes)
@@ -334,9 +363,7 @@ class MultiScaleProjector(nn.Module):
                 feat_fuse = feat_fuse[0]
             results.append(stage(feat_fuse))
         if self.use_extra_pool:
-            results.append(
-                F.max_pool2d(results[-1], kernel_size=1, stride=2, padding=0)
-            )
+            results.append(F.max_pool2d(results[-1], kernel_size=1, stride=2, padding=0))
 
         # NEW: Apply cross-scale fusion if enabled
         if self.cross_scale_fusion is not None:
@@ -349,14 +376,14 @@ class SimpleProjector(nn.Module):
     def __init__(self, in_dim, out_dim, factor_kernel=False):
         super().__init__()
         if not factor_kernel:
-            self.convx1 = ConvX(in_dim, in_dim*2, layer_norm=True, act='silu')
-            self.convx2 = ConvX(in_dim*2, out_dim, layer_norm=True, act='silu')
+            self.convx1 = ConvX(in_dim, in_dim * 2, layer_norm=True, act="silu")
+            self.convx2 = ConvX(in_dim * 2, out_dim, layer_norm=True, act="silu")
         else:
-            self.convx1 = ConvX(in_dim, out_dim, kernel=(3, 1), layer_norm=True, act='silu')
-            self.convx2 = ConvX(out_dim, out_dim, kernel=(1, 3), layer_norm=True, act='silu')
-        self.ln = get_norm('LN', out_dim)
+            self.convx1 = ConvX(in_dim, out_dim, kernel=(3, 1), layer_norm=True, act="silu")
+            self.convx2 = ConvX(out_dim, out_dim, kernel=(1, 3), layer_norm=True, act="silu")
+        self.ln = get_norm("LN", out_dim)
 
     def forward(self, x):
-        """ forward """
+        """forward"""
         out = self.ln(self.convx2(self.convx1(x[0])))
         return [out]

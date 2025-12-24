@@ -51,18 +51,8 @@ def deploy_to_roboflow(self, workspace: str, project_id: str, version: str, api_
     tmp_out_dir = ".roboflow_temp_upload"
     os.makedirs(tmp_out_dir, exist_ok=True)
     outpath = os.path.join(tmp_out_dir, "weights.pt")
-    torch.save(
-        {
-            "model": self.model.model.state_dict(),
-            "args": self.model.args
-        }, outpath
-    )
+    torch.save({"model": self.model.model.state_dict(), "args": self.model.args}, outpath)
     project = workspace.project(project_id)
     version = project.version(version)
-    version.deploy(
-        model_type=size,
-        model_path=tmp_out_dir,
-        filename="weights.pt"
-    )
+    version.deploy(model_type=size, model_path=tmp_out_dir, filename="weights.pt")
     shutil.rmtree(tmp_out_dir)
-

@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 
+
 class ModelConfig(BaseModel):
     encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"]
     out_feature_indexes: list[int]
@@ -47,4 +48,3 @@ class ModelConfig(BaseModel):
     # Default to False (disabled) for compatibility with pretrained weights
     # Validators will override to True when use_improvements=True
     use_cross_scale_fusion: bool = False
-

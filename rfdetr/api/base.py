@@ -50,6 +50,7 @@ def _validate_model_dump_result(result, config_name: str, config_type: str) -> d
         # Get Pydantic version for diagnostics
         try:
             import pydantic
+
             pydantic_version = pydantic.__version__
         except (ImportError, AttributeError):
             pydantic_version = "unknown"
@@ -110,6 +111,7 @@ class RFDETR:
     running inference on the models, optimising models, and uploading trained
     models for deployment.
     """
+
     means = [0.485, 0.456, 0.406]
     stds = [0.229, 0.224, 0.225]
     size = None
@@ -159,18 +161,16 @@ class RFDETR:
 
         if not self.model_config.pretrain_weights.strip():
             logger.error("pretrain_weights is an empty string. Use None if no pretrained weights are needed.")
-            raise ValueError("pretrain_weights cannot be an empty string. Use None if no pretrained weights are needed.")
+            raise ValueError(
+                "pretrain_weights cannot be an empty string. Use None if no pretrained weights are needed."
+            )
 
         pretrain_path = self.model_config.pretrain_weights.strip()
         logger.info(f"Preparing pretrain weights: {pretrain_path}")
 
         # Attempt to download and validate checkpoint
         try:
-            success = download_pretrain_weights(
-                pretrain_path,
-                redownload=False,
-                validate=True
-            )
+            success = download_pretrain_weights(pretrain_path, redownload=False, validate=True)
 
             if success:
                 logger.info(
@@ -219,18 +219,14 @@ class RFDETR:
 
     def train_from_config(self, config: TrainConfig, **kwargs):
         if config.dataset_file == "roboflow":
-            with open(
-                os.path.join(config.dataset_dir, "train", "_annotations.coco.json")
-            ) as f:
+            with open(os.path.join(config.dataset_dir, "train", "_annotations.coco.json")) as f:
                 anns = json.load(f)
                 num_classes = len(anns["categories"])
                 class_names = [c["name"] for c in anns["categories"] if c["supercategory"] != "none"]
                 self.model.class_names = class_names
         elif config.dataset_file == "simsurg":
             # SimSurg uses COCO format with annotations in a separate folder
-            with open(
-                os.path.join(config.dataset_dir, "annotations", "instances_train.json")
-            ) as f:
+            with open(os.path.join(config.dataset_dir, "annotations", "instances_train.json")) as f:
                 anns = json.load(f)
                 num_classes = len(anns["categories"])
                 class_names = [c["name"] for c in anns["categories"] if c["supercategory"] != "none"]
@@ -245,15 +241,11 @@ class RFDETR:
             self.model.reinitialize_detection_head(num_classes)
 
         train_config = _validate_model_dump_result(
-            config.model_dump(),
-            config_name="train_config",
-            config_type=config.__class__.__name__
+            config.model_dump(), config_name="train_config", config_type=config.__class__.__name__
         )
 
         model_config = _validate_model_dump_result(
-            self.model_config.model_dump(),
-            config_name="model_config",
-            config_type=self.model_config.__class__.__name__
+            self.model_config.model_dump(), config_name="model_config", config_type=self.model_config.__class__.__name__
         )
 
         model_config.pop("num_classes")
@@ -282,27 +274,23 @@ class RFDETR:
 
         if config.wandb:
             wandb_config = _validate_model_dump_result(
-                config.model_dump(),
-                config_name="wandb_config",
-                config_type=config.__class__.__name__
+                config.model_dump(), config_name="wandb_config", config_type=config.__class__.__name__
             )
             metrics_wandb_sink = MetricsWandBSink(
-                output_dir=config.output_dir,
-                project=config.project,
-                run=config.run,
-                config=wandb_config
+                output_dir=config.output_dir, project=config.project, run=config.run, config=wandb_config
             )
             self.callbacks["on_fit_epoch_end"].append(metrics_wandb_sink.update)
             self.callbacks["on_train_end"].append(metrics_wandb_sink.close)
 
         if config.early_stopping:
             from rfdetr.util.early_stopping import EarlyStoppingCallback
+
             early_stopping_callback = EarlyStoppingCallback(
                 model=self.model,
                 patience=config.early_stopping_patience,
                 min_delta=config.early_stopping_min_delta,
                 use_ema=config.early_stopping_use_ema,
-                segmentation_head=config.segmentation_head
+                segmentation_head=config.segmentation_head,
             )
             self.callbacks["on_fit_epoch_end"].append(early_stopping_callback.update)
 
@@ -322,9 +310,7 @@ class RFDETR:
         Retrieve a model instance based on the provided configuration.
         """
         config_dict = _validate_model_dump_result(
-            config.model_dump(),
-            config_name="config_dict",
-            config_type=config.__class__.__name__
+            config.model_dump(), config_name="config_dict", config_type=config.__class__.__name__
         )
         return Model(**config_dict)
 
@@ -337,14 +323,15 @@ class RFDETR:
         Returns:
             dict: A dictionary mapping class IDs to class names. The keys are integers starting from
         """
-        if hasattr(self.model, 'class_names') and self.model.class_names:
-            return {i+1: name for i, name in enumerate(self.model.class_names)}
+        if hasattr(self.model, "class_names") and self.model.class_names:
+            return {i + 1: name for i, name in enumerate(self.model.class_names)}
 
         return COCO_CLASSES
 
     def optimize_for_inference(self, compile=True, batch_size=1, dtype=torch.float32):
         """Optimize model for inference by creating a separate inference model."""
         from copy import deepcopy
+
         self.remove_optimized_model()
 
         self.model.inference_model = deepcopy(self.model.model)
@@ -361,10 +348,8 @@ class RFDETR:
             self.model.inference_model = torch.jit.trace(
                 self.model.inference_model,
                 torch.randn(
-                    batch_size, 3, self.model.resolution, self.model.resolution,
-                    device=self.model.device,
-                    dtype=dtype
-                )
+                    batch_size, 3, self.model.resolution, self.model.resolution, device=self.model.device, dtype=dtype
+                ),
             )
             self._optimized_has_been_compiled = True
             self._optimized_batch_size = batch_size
@@ -380,7 +365,9 @@ class RFDETR:
 
     def predict(
         self,
-        images: Union[str, Image.Image, np.ndarray, torch.Tensor, list[Union[str, np.ndarray, Image.Image, torch.Tensor]]],
+        images: Union[
+            str, Image.Image, np.ndarray, torch.Tensor, list[Union[str, np.ndarray, Image.Image, torch.Tensor]]
+        ],
         threshold: float = 0.5,
         **kwargs,
     ) -> Union[sv.Detections, list[sv.Detections]]:
@@ -410,14 +397,10 @@ class RFDETR:
 
             if (img > 1).any():
                 raise ValueError(
-                    "Image has pixel values above 1. Please ensure the image is "
-                    "normalized (scaled to [0, 1])."
+                    "Image has pixel values above 1. Please ensure the image is normalized (scaled to [0, 1])."
                 )
             if img.shape[0] != 3:
-                raise ValueError(
-                    f"Invalid image shape. Expected 3 channels (RGB), but got "
-                    f"{img.shape[0]} channels."
-                )
+                raise ValueError(f"Invalid image shape. Expected 3 channels (RGB), but got {img.shape[0]} channels.")
             img_tensor = img
 
             h, w = img_tensor.shape[1:]
@@ -433,18 +416,22 @@ class RFDETR:
 
         if self._is_optimized_for_inference:
             if self._optimized_resolution != batch_tensor.shape[2]:
-                raise ValueError(f"Resolution mismatch. "
-                             f"Model was optimized for resolution {self._optimized_resolution}, "
-                             f"but got {batch_tensor.shape[2]}. "
-                             "You can explicitly remove the optimized model by calling model.remove_optimized_model().")
+                raise ValueError(
+                    f"Resolution mismatch. "
+                    f"Model was optimized for resolution {self._optimized_resolution}, "
+                    f"but got {batch_tensor.shape[2]}. "
+                    "You can explicitly remove the optimized model by calling model.remove_optimized_model()."
+                )
             if self._optimized_has_been_compiled:
                 if self._optimized_batch_size != batch_tensor.shape[0]:
-                    raise ValueError(f"Batch size mismatch. "
-                                     f"Optimized model was compiled for batch size {self._optimized_batch_size}, "
-                                     f"but got {batch_tensor.shape[0]}. "
-                                     "You can explicitly remove the optimized model by calling model.remove_optimized_model(). "
-                                     "Alternatively, you can recompile the optimized model for a different batch size "
-                                     "by calling model.optimize_for_inference(batch_size=<new_batch_size>).")
+                    raise ValueError(
+                        f"Batch size mismatch. "
+                        f"Optimized model was compiled for batch size {self._optimized_batch_size}, "
+                        f"but got {batch_tensor.shape[0]}. "
+                        "You can explicitly remove the optimized model by calling model.remove_optimized_model(). "
+                        "Alternatively, you can recompile the optimized model for a different batch size "
+                        "by calling model.optimize_for_inference(batch_size=<new_batch_size>)."
+                    )
 
         with torch.inference_mode():
             if self._is_optimized_for_inference:
@@ -515,18 +502,8 @@ class RFDETR:
         tmp_out_dir = ".roboflow_temp_upload"
         os.makedirs(tmp_out_dir, exist_ok=True)
         outpath = os.path.join(tmp_out_dir, "weights.pt")
-        torch.save(
-            {
-                "model": self.model.model.state_dict(),
-                "args": self.model.args
-            }, outpath
-        )
+        torch.save({"model": self.model.model.state_dict(), "args": self.model.args}, outpath)
         project = workspace.project(project_id)
         version = project.version(version)
-        version.deploy(
-            model_type=size,
-            model_path=tmp_out_dir,
-            filename="weights.pt"
-        )
+        version.deploy(model_type=size, model_path=tmp_out_dir, filename="weights.pt")
         shutil.rmtree(tmp_out_dir)
-

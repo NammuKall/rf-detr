@@ -35,10 +35,8 @@ def optimize_for_inference(self, compile=True, batch_size=1, dtype=torch.float32
         self.model.inference_model = torch.jit.trace(
             self.model.inference_model,
             torch.randn(
-                batch_size, 3, self.model.resolution, self.model.resolution,
-                device=self.model.device,
-                dtype=dtype
-            )
+                batch_size, 3, self.model.resolution, self.model.resolution, device=self.model.device, dtype=dtype
+            ),
         )
         self._optimized_has_been_compiled = True
         self._optimized_batch_size = batch_size
@@ -99,7 +97,6 @@ def predict(
     processed_images = []
 
     for img in images:
-
         if isinstance(img, str):
             img = Image.open(img)
 
@@ -108,14 +105,10 @@ def predict(
 
         if (img > 1).any():
             raise ValueError(
-                "Image has pixel values above 1. Please ensure the image is "
-                "normalized (scaled to [0, 1])."
+                "Image has pixel values above 1. Please ensure the image is normalized (scaled to [0, 1])."
             )
         if img.shape[0] != 3:
-            raise ValueError(
-                f"Invalid image shape. Expected 3 channels (RGB), but got "
-                f"{img.shape[0]} channels."
-            )
+            raise ValueError(f"Invalid image shape. Expected 3 channels (RGB), but got {img.shape[0]} channels.")
         img_tensor = img
 
         h, w = img_tensor.shape[1:]
@@ -132,18 +125,22 @@ def predict(
     if self._is_optimized_for_inference:
         if self._optimized_resolution != batch_tensor.shape[2]:
             # this could happen if someone manually changes self.model.resolution after optimizing the model
-            raise ValueError(f"Resolution mismatch. "
-                             f"Model was optimized for resolution {self._optimized_resolution}, "
-                             f"but got {batch_tensor.shape[2]}. "
-                             "You can explicitly remove the optimized model by calling model.remove_optimized_model().")
+            raise ValueError(
+                f"Resolution mismatch. "
+                f"Model was optimized for resolution {self._optimized_resolution}, "
+                f"but got {batch_tensor.shape[2]}. "
+                "You can explicitly remove the optimized model by calling model.remove_optimized_model()."
+            )
         if self._optimized_has_been_compiled:
             if self._optimized_batch_size != batch_tensor.shape[0]:
-                raise ValueError(f"Batch size mismatch. "
-                                 f"Optimized model was compiled for batch size {self._optimized_batch_size}, "
-                                 f"but got {batch_tensor.shape[0]}. "
-                                 "You can explicitly remove the optimized model by calling model.remove_optimized_model(). "
-                                 "Alternatively, you can recompile the optimized model for a different batch size "
-                                 "by calling model.optimize_for_inference(batch_size=<new_batch_size>).")
+                raise ValueError(
+                    f"Batch size mismatch. "
+                    f"Optimized model was compiled for batch size {self._optimized_batch_size}, "
+                    f"but got {batch_tensor.shape[0]}. "
+                    "You can explicitly remove the optimized model by calling model.remove_optimized_model(). "
+                    "Alternatively, you can recompile the optimized model for a different batch size "
+                    "by calling model.optimize_for_inference(batch_size=<new_batch_size>)."
+                )
 
     with torch.inference_mode():
         if self._is_optimized_for_inference:
@@ -191,4 +188,3 @@ def predict(
         detections_list.append(detections)
 
     return detections_list if len(detections_list) > 1 else detections_list[0]
-

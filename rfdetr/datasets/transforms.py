@@ -16,6 +16,7 @@
 """
 Transforms and data augmentation for both image + bbox.
 """
+
 import random
 
 import numpy as np
@@ -61,7 +62,7 @@ def crop(image, target, region):
 
     if "masks" in target:
         # FIXME should we update the area here if there are no boxes?
-        target['masks'] = target['masks'][:, i:i + h, j:j + w]
+        target["masks"] = target["masks"][:, i : i + h, j : j + w]
         fields.append("masks")
 
     # remove elements for which the boxes or masks that have zero area
@@ -69,10 +70,10 @@ def crop(image, target, region):
         # favor boxes selection when defining which elements to keep
         # this is compatible with previous implementation
         if "boxes" in target:
-            cropped_boxes = target['boxes'].reshape(-1, 2, 2)
+            cropped_boxes = target["boxes"].reshape(-1, 2, 2)
             keep = torch.all(cropped_boxes[:, 1, :] > cropped_boxes[:, 0, :], dim=1)
         else:
-            keep = target['masks'].flatten(1).any(1)
+            keep = target["masks"].flatten(1).any(1)
 
         for field in fields:
             target[field] = target[field][keep]
@@ -92,7 +93,7 @@ def hflip(image, target):
         target["boxes"] = boxes
 
     if "masks" in target:
-        target['masks'] = target['masks'].flip(-1)
+        target["masks"] = target["masks"].flip(-1)
 
     return flipped_image, target
 
@@ -132,15 +133,13 @@ def resize(image, target, size, max_size=None):
     if target is None:
         return rescaled_image, None
 
-    ratios = tuple(
-        float(s) / float(s_orig) for s, s_orig in zip(rescaled_image.size, image.size))
+    ratios = tuple(float(s) / float(s_orig) for s, s_orig in zip(rescaled_image.size, image.size))
     ratio_width, ratio_height = ratios
 
     target = target.copy()
     if "boxes" in target:
         boxes = target["boxes"]
-        scaled_boxes = boxes * torch.as_tensor(
-            [ratio_width, ratio_height, ratio_width, ratio_height])
+        scaled_boxes = boxes * torch.as_tensor([ratio_width, ratio_height, ratio_width, ratio_height])
         target["boxes"] = scaled_boxes
 
     if "area" in target:
@@ -152,9 +151,7 @@ def resize(image, target, size, max_size=None):
     target["size"] = torch.tensor([h, w])
 
     if "masks" in target:
-        target['masks'] = interpolate(
-            target['masks'][:, None].float(), size, mode="nearest")[:, 0] > 0.5
-
+        target["masks"] = interpolate(target["masks"][:, None].float(), size, mode="nearest")[:, 0] > 0.5
 
     return rescaled_image, target
 
@@ -168,8 +165,7 @@ def pad(image, target, padding):
     # should we do something wrt the original size?
     target["size"] = torch.tensor(padded_image.size[::-1])
     if "masks" in target:
-        target['masks'] = torch.nn.functional.pad(
-            target['masks'], (0, padding[0], 0, padding[1]))
+        target["masks"] = torch.nn.functional.pad(target["masks"], (0, padding[0], 0, padding[1]))
     return padded_image, target
 
 
@@ -201,8 +197,8 @@ class CenterCrop:
     def __call__(self, img, target):
         image_width, image_height = img.size
         crop_height, crop_width = self.size
-        crop_top = int(round((image_height - crop_height) / 2.))
-        crop_left = int(round((image_width - crop_width) / 2.))
+        crop_top = int(round((image_height - crop_height) / 2.0))
+        crop_left = int(round((image_width - crop_width) / 2.0))
         return crop(img, target, (crop_top, crop_left, crop_height, crop_width))
 
 
@@ -234,19 +230,17 @@ class SquareResize:
 
     def __call__(self, img, target=None):
         size = random.choice(self.sizes)
-        rescaled_img=F.resize(img, (size, size))
+        rescaled_img = F.resize(img, (size, size))
         w, h = rescaled_img.size
         if target is None:
             return rescaled_img, None
-        ratios = tuple(
-            float(s) / float(s_orig) for s, s_orig in zip(rescaled_img.size, img.size))
+        ratios = tuple(float(s) / float(s_orig) for s, s_orig in zip(rescaled_img.size, img.size))
         ratio_width, ratio_height = ratios
 
         target = target.copy()
         if "boxes" in target:
             boxes = target["boxes"]
-            scaled_boxes = boxes * torch.as_tensor(
-                [ratio_width, ratio_height, ratio_width, ratio_height])
+            scaled_boxes = boxes * torch.as_tensor([ratio_width, ratio_height, ratio_width, ratio_height])
             target["boxes"] = scaled_boxes
 
         if "area" in target:
@@ -257,8 +251,7 @@ class SquareResize:
         target["size"] = torch.tensor([h, w])
 
         if "masks" in target:
-            target['masks'] = interpolate(
-                target['masks'][:, None].float(), (h, w), mode="nearest")[:, 0] > 0.5
+            target["masks"] = interpolate(target["masks"][:, None].float(), (h, w), mode="nearest")[:, 0] > 0.5
 
         return rescaled_img, target
 
@@ -274,24 +267,17 @@ class RandomPad:
 
 
 class PILtoNdArray:
-
     def __call__(self, img, target):
         return np.asarray(img), target
 
 
 class NdArraytoPIL:
-
     def __call__(self, img, target):
-        return F.to_pil_image(img.astype('uint8')), target
+        return F.to_pil_image(img.astype("uint8")), target
 
 
 class Pad:
-    def __init__(self,
-                 size=None,
-                 size_divisor=32,
-                 pad_mode=0,
-                 offsets=None,
-                 fill_value=(127.5, 127.5, 127.5)):
+    def __init__(self, size=None, size_divisor=32, pad_mode=0, offsets=None, fill_value=(127.5, 127.5, 127.5)):
         """
         Pad image to a specified size or multiple of size_divisor.
         Args:
@@ -306,16 +292,15 @@ class Pad:
         if not isinstance(size, (int, Sequence)):
             raise TypeError(
                 f"Type of target_size is invalid when random_size is True. \
-                            Must be List, now is {type(size)}")
+                            Must be List, now is {type(size)}"
+            )
 
         if isinstance(size, int):
             size = [size, size]
 
-        assert pad_mode in [
-            -1, 0, 1, 2
-        ], 'currently only supports four modes [-1, 0, 1, 2]'
+        assert pad_mode in [-1, 0, 1, 2], "currently only supports four modes [-1, 0, 1, 2]"
         if pad_mode == -1:
-            assert offsets, 'if pad_mode is -1, offsets should not be None'
+            assert offsets, "if pad_mode is -1, offsets should not be None"
 
         self.size = size
         self.size_divisor = size_divisor
@@ -332,16 +317,14 @@ class Pad:
         h, w = size
         canvas = np.ones((h, w, 3), dtype=np.float32)
         canvas *= np.array(self.fill_value, dtype=np.float32)
-        canvas[y:y + im_h, x:x + im_w, :] = image.astype(np.float32)
+        canvas[y : y + im_h, x : x + im_w, :] = image.astype(np.float32)
         return canvas
 
     def __call__(self, im, target):
         im_h, im_w = im.shape[:2]
         if self.size:
             h, w = self.size
-            assert (
-                im_h <= h and im_w <= w
-            ), '(h, w) of target size should be greater than (im_h, im_w)'
+            assert im_h <= h and im_w <= w, "(h, w) of target size should be greater than (im_h, im_w)"
         else:
             h = int(np.ceil(im_h / self.size_divisor) * self.size_divisor)
             w = int(np.ceil(im_w / self.size_divisor) * self.size_divisor)
@@ -365,9 +348,9 @@ class Pad:
         if self.pad_mode == 0:
             target["size"] = torch.tensor([h, w])
             return im, target
-        if 'boxes' in target and len(target['boxes']) > 0:
+        if "boxes" in target and len(target["boxes"]) > 0:
             boxes = np.asarray(target["boxes"])
-            target["boxes"]  = torch.from_numpy(self.apply_bbox(boxes, offsets))
+            target["boxes"] = torch.from_numpy(self.apply_bbox(boxes, offsets))
             target["size"] = torch.tensor([h, w])
 
         return im, target
@@ -381,24 +364,23 @@ class RandomExpand:
         fill_value (list): color value used to fill the canvas. in RGB order.
     """
 
-    def __init__(self, ratio=4., prob=0.5, fill_value=(127.5, 127.5, 127.5)):
+    def __init__(self, ratio=4.0, prob=0.5, fill_value=(127.5, 127.5, 127.5)):
         assert ratio > 1.01, "expand ratio must be larger than 1.01"
         self.ratio = ratio
         self.prob = prob
-        assert isinstance(fill_value, (Number, Sequence)), \
-            "fill value must be either float or sequence"
+        assert isinstance(fill_value, (Number, Sequence)), "fill value must be either float or sequence"
         if isinstance(fill_value, Number):
-            fill_value = (fill_value, ) * 3
+            fill_value = (fill_value,) * 3
         if not isinstance(fill_value, tuple):
             fill_value = tuple(fill_value)
         self.fill_value = fill_value
 
     def __call__(self, img, target):
-        if np.random.uniform(0., 1.) < self.prob:
+        if np.random.uniform(0.0, 1.0) < self.prob:
             return img, target
 
         height, width = img.shape[:2]
-        ratio = np.random.uniform(1., self.ratio)
+        ratio = np.random.uniform(1.0, self.ratio)
         h = int(height * ratio)
         w = int(width * ratio)
         if not h > height or not w > width:
@@ -407,10 +389,7 @@ class RandomExpand:
         x = np.random.randint(0, w - width)
         offsets, size = [x, y], [h, w]
 
-        pad = Pad(size,
-                  pad_mode=-1,
-                  offsets=offsets,
-                  fill_value=self.fill_value)
+        pad = Pad(size, pad_mode=-1, offsets=offsets, fill_value=self.fill_value)
 
         return pad(img, target)
 
@@ -420,6 +399,7 @@ class RandomSelect:
     Randomly selects between transforms1 and transforms2,
     with probability p for transforms1 and (1 - p) for transforms2
     """
+
     def __init__(self, transforms1, transforms2, p=0.5):
         self.transforms1 = transforms1
         self.transforms2 = transforms2
@@ -437,7 +417,6 @@ class ToTensor:
 
 
 class RandomErasing:
-
     def __init__(self, *args, **kwargs):
         self.eraser = T.RandomErasing(*args, **kwargs)
 

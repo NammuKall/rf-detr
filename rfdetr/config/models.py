@@ -24,6 +24,7 @@ class RFDETRBaseConfig(ModelConfig):
     NOTE: The improved architecture (use_improvements=True) requires retrained weights.
     Set use_improvements=False to use pretrained weights with original architecture.
     """
+
     encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"] = "dinov2_windowed_small"
     # NEW: Flag to enable/disable improvements (for compatibility with pretrained weights)
     use_improvements: bool = False  # Set to True after retraining with improvements
@@ -61,12 +62,12 @@ class RFDETRBaseConfig(ModelConfig):
     def _get_required_fields(cls):
         return get_required_fields(cls)
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def validate_required_fields_before(cls, data):
         return validate_required_fields_before(cls, data)
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def apply_improvements_before(cls, data):
         """Apply improvements before model creation"""
@@ -74,58 +75,58 @@ class RFDETRBaseConfig(ModelConfig):
         if not isinstance(data, dict):
             data = {} if data is None else dict(data)
 
-        use_improvements = data.get('use_improvements', False)
+        use_improvements = data.get("use_improvements", False)
 
         if use_improvements:
             # Apply improved dimensions - use improved_* values if provided, otherwise use defaults
-            improved_hidden_dim = data.pop('improved_hidden_dim', None)
-            improved_sa_nheads = data.pop('improved_sa_nheads', None)
-            improved_ca_nheads = data.pop('improved_ca_nheads', None)
-            improved_dec_n_points = data.pop('improved_dec_n_points', None)
+            improved_hidden_dim = data.pop("improved_hidden_dim", None)
+            improved_sa_nheads = data.pop("improved_sa_nheads", None)
+            improved_ca_nheads = data.pop("improved_ca_nheads", None)
+            improved_dec_n_points = data.pop("improved_dec_n_points", None)
 
             # Get class defaults for improved values
             if improved_hidden_dim is not None:
-                data['hidden_dim'] = improved_hidden_dim
-            elif 'hidden_dim' not in data:
+                data["hidden_dim"] = improved_hidden_dim
+            elif "hidden_dim" not in data:
                 # Use class default if not set
-                data['hidden_dim'] = getattr(cls, 'improved_hidden_dim', 320)
+                data["hidden_dim"] = getattr(cls, "improved_hidden_dim", 320)
 
             if improved_sa_nheads is not None:
-                data['sa_nheads'] = improved_sa_nheads
-            elif 'sa_nheads' not in data:
-                data['sa_nheads'] = getattr(cls, 'improved_sa_nheads', 10)
+                data["sa_nheads"] = improved_sa_nheads
+            elif "sa_nheads" not in data:
+                data["sa_nheads"] = getattr(cls, "improved_sa_nheads", 10)
 
             if improved_ca_nheads is not None:
-                data['ca_nheads'] = improved_ca_nheads
-            elif 'ca_nheads' not in data:
-                data['ca_nheads'] = getattr(cls, 'improved_ca_nheads', 20)
+                data["ca_nheads"] = improved_ca_nheads
+            elif "ca_nheads" not in data:
+                data["ca_nheads"] = getattr(cls, "improved_ca_nheads", 20)
 
             if improved_dec_n_points is not None:
-                data['dec_n_points'] = improved_dec_n_points
-            elif 'dec_n_points' not in data:
-                data['dec_n_points'] = getattr(cls, 'improved_dec_n_points', 4)
+                data["dec_n_points"] = improved_dec_n_points
+            elif "dec_n_points" not in data:
+                data["dec_n_points"] = getattr(cls, "improved_dec_n_points", 4)
 
-            data.setdefault('num_encoder_layers', 2)
-            data.setdefault('use_cross_scale_fusion', True)
+            data.setdefault("num_encoder_layers", 2)
+            data.setdefault("use_cross_scale_fusion", True)
         else:
             # When use_improvements=False, ensure improved values are removed
             # but don't override existing values (let class defaults handle it)
-            data.pop('improved_hidden_dim', None)
-            data.pop('improved_sa_nheads', None)
-            data.pop('improved_ca_nheads', None)
-            data.pop('improved_dec_n_points', None)
+            data.pop("improved_hidden_dim", None)
+            data.pop("improved_sa_nheads", None)
+            data.pop("improved_ca_nheads", None)
+            data.pop("improved_dec_n_points", None)
             # Only set these if not already set (to allow class defaults to work)
-            if 'num_encoder_layers' not in data:
-                data['num_encoder_layers'] = 0
-            if 'use_cross_scale_fusion' not in data:
-                data['use_cross_scale_fusion'] = False
+            if "num_encoder_layers" not in data:
+                data["num_encoder_layers"] = 0
+            if "use_cross_scale_fusion" not in data:
+                data["use_cross_scale_fusion"] = False
 
         return data
 
     def _get_original_dimensions(self):
         return get_original_dimensions(self)
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_config_values(self):
         return validate_config_values(self)
 
@@ -137,6 +138,7 @@ class RFDETRLargeConfig(RFDETRBaseConfig):
     NOTE: The improved architecture (use_improvements=True) requires retrained weights.
     Set use_improvements=False to use pretrained weights with original architecture.
     """
+
     encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"] = "dinov2_windowed_base"
     use_improvements: bool = False
 
@@ -160,7 +162,7 @@ class RFDETRLargeConfig(RFDETRBaseConfig):
     projector_scale: list[Literal["P3", "P4", "P5"]] = ["P3", "P5"]
     pretrain_weights: Optional[str] = "rf-detr-large.pth"
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def apply_improvements_before(cls, data):
         """Apply improvements before model creation"""
@@ -168,54 +170,54 @@ class RFDETRLargeConfig(RFDETRBaseConfig):
         if not isinstance(data, dict):
             data = {} if data is None else dict(data)
 
-        use_improvements = data.get('use_improvements', False)
+        use_improvements = data.get("use_improvements", False)
 
         if use_improvements:
             # Apply improved dimensions - use improved_* values if provided, otherwise use defaults
-            improved_hidden_dim = data.pop('improved_hidden_dim', None)
-            improved_sa_nheads = data.pop('improved_sa_nheads', None)
-            improved_ca_nheads = data.pop('improved_ca_nheads', None)
-            improved_dec_n_points = data.pop('improved_dec_n_points', None)
+            improved_hidden_dim = data.pop("improved_hidden_dim", None)
+            improved_sa_nheads = data.pop("improved_sa_nheads", None)
+            improved_ca_nheads = data.pop("improved_ca_nheads", None)
+            improved_dec_n_points = data.pop("improved_dec_n_points", None)
 
             # Get class defaults for improved values
             if improved_hidden_dim is not None:
-                data['hidden_dim'] = improved_hidden_dim
-            elif 'hidden_dim' not in data:
-                data['hidden_dim'] = getattr(cls, 'improved_hidden_dim', 512)
+                data["hidden_dim"] = improved_hidden_dim
+            elif "hidden_dim" not in data:
+                data["hidden_dim"] = getattr(cls, "improved_hidden_dim", 512)
 
             if improved_sa_nheads is not None:
-                data['sa_nheads'] = improved_sa_nheads
-            elif 'sa_nheads' not in data:
-                data['sa_nheads'] = getattr(cls, 'improved_sa_nheads', 16)
+                data["sa_nheads"] = improved_sa_nheads
+            elif "sa_nheads" not in data:
+                data["sa_nheads"] = getattr(cls, "improved_sa_nheads", 16)
 
             if improved_ca_nheads is not None:
-                data['ca_nheads'] = improved_ca_nheads
-            elif 'ca_nheads' not in data:
-                data['ca_nheads'] = getattr(cls, 'improved_ca_nheads', 32)
+                data["ca_nheads"] = improved_ca_nheads
+            elif "ca_nheads" not in data:
+                data["ca_nheads"] = getattr(cls, "improved_ca_nheads", 32)
 
             if improved_dec_n_points is not None:
-                data['dec_n_points'] = improved_dec_n_points
-            elif 'dec_n_points' not in data:
-                data['dec_n_points'] = getattr(cls, 'improved_dec_n_points', 6)
+                data["dec_n_points"] = improved_dec_n_points
+            elif "dec_n_points" not in data:
+                data["dec_n_points"] = getattr(cls, "improved_dec_n_points", 6)
 
-            data.setdefault('num_encoder_layers', 3)
-            data.setdefault('use_cross_scale_fusion', True)
+            data.setdefault("num_encoder_layers", 3)
+            data.setdefault("use_cross_scale_fusion", True)
         else:
             # When use_improvements=False, ensure improved values are removed
             # but don't override existing values (let class defaults handle it)
-            data.pop('improved_hidden_dim', None)
-            data.pop('improved_sa_nheads', None)
-            data.pop('improved_ca_nheads', None)
-            data.pop('improved_dec_n_points', None)
+            data.pop("improved_hidden_dim", None)
+            data.pop("improved_sa_nheads", None)
+            data.pop("improved_ca_nheads", None)
+            data.pop("improved_dec_n_points", None)
             # Only set these if not already set (to allow class defaults to work)
-            if 'num_encoder_layers' not in data:
-                data['num_encoder_layers'] = 0
-            if 'use_cross_scale_fusion' not in data:
-                data['use_cross_scale_fusion'] = False
+            if "num_encoder_layers" not in data:
+                data["num_encoder_layers"] = 0
+            if "use_cross_scale_fusion" not in data:
+                data["use_cross_scale_fusion"] = False
 
         return data
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_config_values(self):
         """Comprehensive validation of config values after validator execution.
 
@@ -234,6 +236,7 @@ class RFDETRNanoConfig(RFDETRBaseConfig):
     NOTE: This config does not support use_improvements=True.
     Only Base, Large, and Medium configs support improvements.
     """
+
     out_feature_indexes: list[int] = [3, 6, 9, 12]
     num_windows: int = 2
     dec_layers: int = 2
@@ -242,14 +245,14 @@ class RFDETRNanoConfig(RFDETRBaseConfig):
     positional_encoding_size: int = 24
     pretrain_weights: Optional[str] = "rf-detr-nano.pth"
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def apply_improvements_before(cls, data):
         """Reject use_improvements for configs that don't support it"""
         if not isinstance(data, dict):
             data = {} if data is None else dict(data)
 
-        if data.get('use_improvements', False):
+        if data.get("use_improvements", False):
             raise ValueError(
                 f"{cls.__name__} does not support use_improvements=True. "
                 f"Only Base, Large, and Medium configs support improvements. "
@@ -257,11 +260,11 @@ class RFDETRNanoConfig(RFDETRBaseConfig):
             )
 
         # Remove use_improvements and improved_* fields if present (shouldn't be, but be safe)
-        data.pop('use_improvements', None)
-        data.pop('improved_hidden_dim', None)
-        data.pop('improved_sa_nheads', None)
-        data.pop('improved_ca_nheads', None)
-        data.pop('improved_dec_n_points', None)
+        data.pop("use_improvements", None)
+        data.pop("improved_hidden_dim", None)
+        data.pop("improved_sa_nheads", None)
+        data.pop("improved_ca_nheads", None)
+        data.pop("improved_dec_n_points", None)
 
         return data
 
@@ -273,6 +276,7 @@ class RFDETRSmallConfig(RFDETRBaseConfig):
     NOTE: This config does not support use_improvements=True.
     Only Base, Large, and Medium configs support improvements.
     """
+
     out_feature_indexes: list[int] = [3, 6, 9, 12]
     num_windows: int = 2
     dec_layers: int = 3
@@ -281,14 +285,14 @@ class RFDETRSmallConfig(RFDETRBaseConfig):
     positional_encoding_size: int = 32
     pretrain_weights: Optional[str] = "rf-detr-small.pth"
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def apply_improvements_before(cls, data):
         """Reject use_improvements for configs that don't support it"""
         if not isinstance(data, dict):
             data = {} if data is None else dict(data)
 
-        if data.get('use_improvements', False):
+        if data.get("use_improvements", False):
             raise ValueError(
                 f"{cls.__name__} does not support use_improvements=True. "
                 f"Only Base, Large, and Medium configs support improvements. "
@@ -296,11 +300,11 @@ class RFDETRSmallConfig(RFDETRBaseConfig):
             )
 
         # Remove use_improvements and improved_* fields if present (shouldn't be, but be safe)
-        data.pop('use_improvements', None)
-        data.pop('improved_hidden_dim', None)
-        data.pop('improved_sa_nheads', None)
-        data.pop('improved_ca_nheads', None)
-        data.pop('improved_dec_n_points', None)
+        data.pop("use_improvements", None)
+        data.pop("improved_hidden_dim", None)
+        data.pop("improved_sa_nheads", None)
+        data.pop("improved_ca_nheads", None)
+        data.pop("improved_dec_n_points", None)
 
         return data
 
@@ -312,6 +316,7 @@ class RFDETRMediumConfig(RFDETRBaseConfig):
     NOTE: The improved architecture (use_improvements=True) requires retrained weights.
     Set use_improvements=False to use pretrained weights with original architecture.
     """
+
     use_improvements: bool = False
 
     out_feature_indexes: list[int] = [3, 6, 9, 12]
@@ -334,7 +339,7 @@ class RFDETRMediumConfig(RFDETRBaseConfig):
     num_encoder_layers: int = 0  # Default to 0 for compatibility
     use_cross_scale_fusion: bool = False  # Default to False for compatibility
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def apply_improvements_before(cls, data):
         """Apply improvements before model creation"""
@@ -342,54 +347,54 @@ class RFDETRMediumConfig(RFDETRBaseConfig):
         if not isinstance(data, dict):
             data = {} if data is None else dict(data)
 
-        use_improvements = data.get('use_improvements', False)
+        use_improvements = data.get("use_improvements", False)
 
         if use_improvements:
             # Apply improved dimensions - use improved_* values if provided, otherwise use defaults
-            improved_hidden_dim = data.pop('improved_hidden_dim', None)
-            improved_sa_nheads = data.pop('improved_sa_nheads', None)
-            improved_ca_nheads = data.pop('improved_ca_nheads', None)
-            improved_dec_n_points = data.pop('improved_dec_n_points', None)
+            improved_hidden_dim = data.pop("improved_hidden_dim", None)
+            improved_sa_nheads = data.pop("improved_sa_nheads", None)
+            improved_ca_nheads = data.pop("improved_ca_nheads", None)
+            improved_dec_n_points = data.pop("improved_dec_n_points", None)
 
             # Get class defaults for improved values
             if improved_hidden_dim is not None:
-                data['hidden_dim'] = improved_hidden_dim
-            elif 'hidden_dim' not in data:
-                data['hidden_dim'] = getattr(cls, 'improved_hidden_dim', 384)
+                data["hidden_dim"] = improved_hidden_dim
+            elif "hidden_dim" not in data:
+                data["hidden_dim"] = getattr(cls, "improved_hidden_dim", 384)
 
             if improved_sa_nheads is not None:
-                data['sa_nheads'] = improved_sa_nheads
-            elif 'sa_nheads' not in data:
-                data['sa_nheads'] = getattr(cls, 'improved_sa_nheads', 12)
+                data["sa_nheads"] = improved_sa_nheads
+            elif "sa_nheads" not in data:
+                data["sa_nheads"] = getattr(cls, "improved_sa_nheads", 12)
 
             if improved_ca_nheads is not None:
-                data['ca_nheads'] = improved_ca_nheads
-            elif 'ca_nheads' not in data:
-                data['ca_nheads'] = getattr(cls, 'improved_ca_nheads', 24)
+                data["ca_nheads"] = improved_ca_nheads
+            elif "ca_nheads" not in data:
+                data["ca_nheads"] = getattr(cls, "improved_ca_nheads", 24)
 
             if improved_dec_n_points is not None:
-                data['dec_n_points'] = improved_dec_n_points
-            elif 'dec_n_points' not in data:
-                data['dec_n_points'] = getattr(cls, 'improved_dec_n_points', 4)
+                data["dec_n_points"] = improved_dec_n_points
+            elif "dec_n_points" not in data:
+                data["dec_n_points"] = getattr(cls, "improved_dec_n_points", 4)
 
-            data.setdefault('num_encoder_layers', 2)
-            data.setdefault('use_cross_scale_fusion', True)
+            data.setdefault("num_encoder_layers", 2)
+            data.setdefault("use_cross_scale_fusion", True)
         else:
             # When use_improvements=False, ensure improved values are removed
             # but don't override existing values (let class defaults handle it)
-            data.pop('improved_hidden_dim', None)
-            data.pop('improved_sa_nheads', None)
-            data.pop('improved_ca_nheads', None)
-            data.pop('improved_dec_n_points', None)
+            data.pop("improved_hidden_dim", None)
+            data.pop("improved_sa_nheads", None)
+            data.pop("improved_ca_nheads", None)
+            data.pop("improved_dec_n_points", None)
             # Only set these if not already set (to allow class defaults to work)
-            if 'num_encoder_layers' not in data:
-                data['num_encoder_layers'] = 0
-            if 'use_cross_scale_fusion' not in data:
-                data['use_cross_scale_fusion'] = False
+            if "num_encoder_layers" not in data:
+                data["num_encoder_layers"] = 0
+            if "use_cross_scale_fusion" not in data:
+                data["use_cross_scale_fusion"] = False
 
         return data
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_config_values(self):
         """Comprehensive validation of config values after validator execution.
 
@@ -408,6 +413,7 @@ class RFDETRSegPreviewConfig(RFDETRBaseConfig):
     NOTE: This config does not support use_improvements=True.
     Only Base, Large, and Medium configs support improvements.
     """
+
     segmentation_head: bool = True
     out_feature_indexes: list[int] = [3, 6, 9, 12]
     num_windows: int = 2
@@ -420,14 +426,14 @@ class RFDETRSegPreviewConfig(RFDETRBaseConfig):
     pretrain_weights: Optional[str] = "rf-detr-seg-preview.pt"
     num_classes: int = 90
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def apply_improvements_before(cls, data):
         """Reject use_improvements for configs that don't support it"""
         if not isinstance(data, dict):
             data = {} if data is None else dict(data)
 
-        if data.get('use_improvements', False):
+        if data.get("use_improvements", False):
             raise ValueError(
                 f"{cls.__name__} does not support use_improvements=True. "
                 f"Only Base, Large, and Medium configs support improvements. "
@@ -435,11 +441,10 @@ class RFDETRSegPreviewConfig(RFDETRBaseConfig):
             )
 
         # Remove use_improvements and improved_* fields if present (shouldn't be, but be safe)
-        data.pop('use_improvements', None)
-        data.pop('improved_hidden_dim', None)
-        data.pop('improved_sa_nheads', None)
-        data.pop('improved_ca_nheads', None)
-        data.pop('improved_dec_n_points', None)
+        data.pop("use_improvements", None)
+        data.pop("improved_hidden_dim", None)
+        data.pop("improved_sa_nheads", None)
+        data.pop("improved_ca_nheads", None)
+        data.pop("improved_dec_n_points", None)
 
         return data
-
