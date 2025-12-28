@@ -71,7 +71,10 @@ class CocoDetection(torchvision.datasets.CocoDetection):
         super().__init__(img_folder, ann_file)
         self._transforms = transforms
         self.include_masks = include_masks
-        self.prepare = ConvertCoco(include_masks=include_masks)
+        # Build category ID mapping: original COCO IDs -> 0-indexed contiguous IDs
+        cat_ids = sorted(self.coco.getCatIds())
+        self.cat_id_map = {cat_id: i for i, cat_id in enumerate(cat_ids)}
+        self.prepare = ConvertCoco(include_masks=include_masks, cat_id_map=self.cat_id_map)
 
     def __getitem__(self, idx):
         img, target = super().__getitem__(idx)
@@ -84,8 +87,9 @@ class CocoDetection(torchvision.datasets.CocoDetection):
 
 
 class ConvertCoco:
-    def __init__(self, include_masks=False):
+    def __init__(self, include_masks=False, cat_id_map=None):
         self.include_masks = include_masks
+        self.cat_id_map = cat_id_map
 
     def __call__(self, image, target):
         w, h = image.size
@@ -104,7 +108,11 @@ class ConvertCoco:
         boxes[:, 0::2].clamp_(min=0, max=w)
         boxes[:, 1::2].clamp_(min=0, max=h)
 
-        classes = [obj["category_id"] for obj in anno]
+        # Remap category IDs to 0-indexed contiguous IDs if mapping is provided
+        if self.cat_id_map is not None:
+            classes = [self.cat_id_map[obj["category_id"]] for obj in anno]
+        else:
+            classes = [obj["category_id"] for obj in anno]
         classes = torch.tensor(classes, dtype=torch.int64)
 
         keep = (boxes[:, 3] > boxes[:, 1]) & (boxes[:, 2] > boxes[:, 0])
