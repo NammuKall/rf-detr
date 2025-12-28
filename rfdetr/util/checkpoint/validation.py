@@ -53,7 +53,7 @@ def validate_checkpoint(
 
     # Try to load and validate checkpoint structure
     try:
-        checkpoint = torch.load(checkpoint_path, map_location="cpu")
+        checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
 
         if validate_structure:
             is_valid, error_msg, _ = validate_checkpoint_structure(
